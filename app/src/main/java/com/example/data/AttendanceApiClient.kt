@@ -1,0 +1,699 @@
+package com.example.data
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
+
+class AttendanceApiClient {
+
+    companion object {
+        const val BASE_URL =
+            "https://script.google.com/macros/s/AKfycbyHV65ckL_FdhXCd27TTCxJbgMY5tc0d8Pvifxe60o7aLMe0TMvjzuknotjEvwoDOzRyw/exec"
+        const val ESP_KEY = "EMECH_KEY_2026"
+
+        fun todayIstDateString(): String {
+            val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.US)
+            sdf.timeZone = TimeZone.getTimeZone("Asia/Kolkata")
+            return sdf.format(Date())
+        }
+    }
+
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(35, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    suspend fun fetchTraineeData(roll: String, pin: String): ApiResult<TraineeDashboardData> {
+        return executeGet(
+            mapOf(
+                "action" to "trainee_data",
+                "roll" to roll.trim(),
+                "pin" to pin.trim()
+            )
+        ) { json ->
+            val name = json.optString("name", "Trainee #$roll").ifBlank { "Trainee #$roll" }
+            val attendance = parseAttendanceSummary(json.optJSONObject("attendance"))
+
+            val leavesArray = json.optJSONArray("leaves") ?: JSONArray()
+            val leaves = buildList {
+                for (i in 0 until leavesArray.length()) {
+                    val item = leavesArray.optJSONObject(i) ?: continue
+                    add(
+                        TraineeLeaveItem(
+                            id = item.optString("id", item.optString("reqId", "")),
+                            date = item.optString("date", "-"),
+                            type = item.optString("type", "Out-Pass"),
+                            status = item.optString("status", "PENDING_SIR"),
+                            pdf = item.optString("pdf", item.optString("pdfUrl", "")).trim()
+                        )
+                    )
+                }
+            }
+
+            val attendanceDate = json.optString("attendanceDate", json.optString("date", todayIstDateString()))
+                .ifBlank { todayIstDateString() }
+            val holidays = parseHolidays(json.optJSONArray("holidays"))
+            val todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
+                ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) }
+
+            TraineeDashboardData(
+                roll = roll.trim(),
+                name = name,
+                attendance = attendance,
+                leaves = leaves,
+                attendanceClosed = json.optAttendanceClosed(),
+                attendanceDate = attendanceDate,
+                closedAt = json.optString("closedAt", "").trim(),
+                todayHoliday = todayHoliday,
+                holidays = holidays,
+                notices = parseNotices(json.optJSONArray("notices")),
+                projectGroupsEnabled = json.optBoolean("projectGroupsEnabled", false),
+                projectGroups = parseProjectGroups(json.optJSONArray("projectGroups")),
+                dutyItems = parseStringList(json.optJSONArray("dutyItems"))
+            )
+        }
+    }
+
+    suspend fun fetchParentData(roll: String, pin: String): ApiResult<ParentDashboardData> {
+        return executeGet(
+            mapOf(
+                "action" to "parent_data",
+                "roll" to roll.trim(),
+                "pin" to pin.trim()
+            )
+        ) { json ->
+            val studentName = json.optString("name", json.optString("studentName", "Trainee #$roll"))
+                .ifBlank { "Trainee #$roll" }
+            val resolvedRoll = json.optSafeString("roll", roll.trim())
+            val attendance = parseAttendanceSummary(json.optJSONObject("attendance"))
+            val attendanceDate = json.optString("attendanceDate", json.optString("date", todayIstDateString()))
+                .ifBlank { todayIstDateString() }
+            val holidays = parseHolidays(json.optJSONArray("holidays"))
+            val todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
+                ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) }
+
+            ParentDashboardData(
+                roll = resolvedRoll,
+                studentName = studentName,
+                attendance = attendance,
+                attendanceClosed = json.optAttendanceClosed(),
+                attendanceDate = attendanceDate,
+                closedAt = json.optString("closedAt", "").trim(),
+                todayHoliday = todayHoliday,
+                holidays = holidays,
+                notices = parseNotices(json.optJSONArray("notices")),
+                parentAlerts = parseParentAlerts(json.optJSONArray("parentAlerts"))
+            )
+        }
+    }
+
+    suspend fun submitParentAlert(
+        roll: String,
+        pin: String,
+        alertType: String,
+        message: String
+    ): ApiResult<ParentAlertSubmitResult> {
+        return executeGet(
+            mapOf(
+                "action" to "parent_submit_alert",
+                "roll" to roll.trim(),
+                "pin" to pin.trim(),
+                "alertType" to alertType.trim(),
+                "message" to message.trim()
+            )
+        ) { json ->
+            val alertId = json.optString("alertId", json.optString("id", "")).trim()
+            val msg = json.optString("msg", "Alert sent to Trade Instructor.").ifBlank {
+                "Alert sent to Trade Instructor."
+            }
+            ParentAlertSubmitResult(alertId = alertId, message = msg)
+        }
+    }
+
+    suspend fun submitLeave(
+        roll: String,
+        pin: String,
+        type: String,
+        timeWindow: String,
+        reason: String,
+        studentSig: String
+    ): ApiResult<LeaveSubmitResult> {
+        return executeGet(
+            mapOf(
+                "action" to "submit_leave",
+                "roll" to roll.trim(),
+                "pin" to pin.trim(),
+                "type" to type.trim(),
+                "timeWindow" to timeWindow.trim(),
+                "reason" to reason.trim(),
+                "studentSig" to studentSig.trim()
+            )
+        ) { json ->
+            val reqId = json.optString("reqId", json.optString("id", "")).trim()
+            val msg = json.optString("msg", "Out-pass request submitted successfully.").ifBlank {
+                "Out-pass request submitted successfully."
+            }
+            LeaveSubmitResult(reqId = reqId, message = msg)
+        }
+    }
+
+    suspend fun fetchStaffData(pin: String): ApiResult<StaffDashboardData> {
+        return executeGet(
+            mapOf(
+                "action" to "staff_data",
+                "pin" to pin.trim()
+            )
+        ) { json ->
+            val attArray = json.optJSONArray("allAttendance") ?: JSONArray()
+            val attendanceList = buildList {
+                for (i in 0 until attArray.length()) {
+                    val item = attArray.optJSONObject(i) ?: continue
+                    add(
+                        StaffAttendanceRecord(
+                            roll = item.optSafeString("roll"),
+                            name = item.optString("name", "Unknown Trainee"),
+                            todayStatus = item.optString("todayStatus", "ABSENT").ifBlank { "ABSENT" },
+                            inT = item.optString("inT", "-").ifBlank { "-" },
+                            outT = item.optString("outT", "-").ifBlank { "-" },
+                            present = item.optSafeInt("present"),
+                            half = item.optSafeInt("half"),
+                            total = item.optSafeInt("total"),
+                            pct = item.optSafeInt("pct")
+                        )
+                    )
+                }
+            }
+
+            val pendingArray = json.optJSONArray("pendingLeaves") ?: JSONArray()
+            val pendingList = buildList {
+                for (i in 0 until pendingArray.length()) {
+                    val item = pendingArray.optJSONObject(i) ?: continue
+                    add(
+                        PendingLeaveRequest(
+                            reqId = item.optString("reqId", item.optString("id", "")),
+                            date = item.optString("date", "-"),
+                            roll = item.optSafeString("roll"),
+                            name = item.optString("name", "Trainee"),
+                            type = item.optString("type", "Out-Pass"),
+                            timeWindow = item.optString("timeWindow", "-"),
+                            reason = item.optString("reason", "-")
+                        )
+                    )
+                }
+            }
+
+            val attendanceDate = json.optString("attendanceDate", json.optString("date", todayIstDateString()))
+                .ifBlank { todayIstDateString() }
+            val holidays = parseHolidays(json.optJSONArray("holidays"))
+            val todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
+                ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) }
+
+            StaffDashboardData(
+                allAttendance = attendanceList,
+                pendingLeaves = pendingList,
+                parentAlerts = parseParentAlerts(json.optJSONArray("parentAlerts")),
+                attendanceClosed = json.optAttendanceClosed(),
+                attendanceDate = attendanceDate,
+                closedAt = json.optString("closedAt", "").trim(),
+                todayHoliday = todayHoliday,
+                holidays = holidays,
+                notices = parseNotices(json.optJSONArray("notices")),
+                projectGroupsEnabled = json.optBoolean("projectGroupsEnabled", false),
+                projectGroups = parseProjectGroups(json.optJSONArray("projectGroups"))
+            )
+        }
+    }
+
+    suspend fun confirmCloseAttendance(
+        pin: String,
+        date: String = todayIstDateString()
+    ): ApiResult<CloseAttendanceResult> {
+        return executeGet(
+            mapOf(
+                "action" to "confirm_close_attendance",
+                "pin" to pin.trim(),
+                "date" to date.trim()
+            )
+        ) { json ->
+            CloseAttendanceResult(
+                attendanceClosed = json.optBoolean("attendanceClosed", true),
+                date = json.optString("date", date).ifBlank { date },
+                closedAt = json.optString("closedAt", "").trim(),
+                absentCount = json.optSafeInt("absentCount"),
+                halfDayCount = json.optSafeInt("halfDayCount"),
+                message = json.optString(
+                    "msg",
+                    "Today's attendance confirmed & closed. Parent alerts for Absent & Half-Day are now active."
+                ).ifBlank {
+                    "Today's attendance confirmed & closed. Parent alerts for Absent & Half-Day are now active."
+                }
+            )
+        }
+    }
+
+    suspend fun postHoliday(
+        pin: String,
+        date: String,
+        reason: String
+    ): ApiResult<HolidayPostResult> {
+        return executeGet(
+            mapOf(
+                "action" to "post_holiday",
+                "pin" to pin.trim(),
+                "date" to date.trim(),
+                "reason" to reason.trim()
+            )
+        ) { json ->
+            val holidayObj = json.optJSONObject("holiday")
+            val holiday = parseSingleHoliday(holidayObj) ?: HolidayAnnouncement(
+                id = json.optSafeString("id", "HOL-$date"),
+                date = date.trim(),
+                reason = reason.trim(),
+                postedBy = json.optString("postedBy", "Trade Instructor"),
+                postedAt = json.optString("postedAt", "")
+            )
+            HolidayPostResult(
+                holiday = holiday,
+                message = json.optString("msg", "Holiday announcement published for $date.")
+                    .ifBlank { "Holiday announcement published for $date." }
+            )
+        }
+    }
+
+    suspend fun postNotice(
+        pin: String,
+        title: String,
+        category: String,
+        body: String,
+        date: String = todayIstDateString()
+    ): ApiResult<NoticePostResult> {
+        return executeGet(
+            mapOf(
+                "action" to "post_notice",
+                "pin" to pin.trim(),
+                "title" to title.trim(),
+                "category" to category.trim(),
+                "body" to body.trim(),
+                "date" to date.trim()
+            )
+        ) { json ->
+            val noticeObj = json.optJSONObject("notice")
+            val notice = if (noticeObj != null) {
+                parseSingleNotice(noticeObj)
+            } else {
+                NoticeItem(
+                    id = json.optSafeString("noticeId", json.optSafeString("id", "NTC-${System.currentTimeMillis()}")),
+                    title = title.trim(),
+                    date = date.trim(),
+                    category = category.trim(),
+                    body = body.trim(),
+                    postedBy = json.optString("postedBy", "Trade Instructor")
+                )
+            }
+            NoticePostResult(
+                notice = notice,
+                message = json.optString("msg", "Notice published to students & parents.")
+                    .ifBlank { "Notice published to students & parents." }
+            )
+        }
+    }
+
+    suspend fun setProjectGroupsAccess(
+        pin: String,
+        enabled: Boolean
+    ): ApiResult<ProjectAccessResult> {
+        return executeGet(
+            mapOf(
+                "action" to "set_project_groups_access",
+                "pin" to pin.trim(),
+                "enabled" to enabled.toString()
+            )
+        ) { json ->
+            val resolvedEnabled = json.optBoolean("projectGroupsEnabled", json.optBoolean("enabled", enabled))
+            ProjectAccessResult(
+                enabled = resolvedEnabled,
+                message = json.optString(
+                    "msg",
+                    if (resolvedEnabled) "Project Groups tab enabled for trainees." else "Project Groups tab locked for trainees."
+                ).ifBlank {
+                    if (resolvedEnabled) "Project Groups tab enabled for trainees." else "Project Groups tab locked for trainees."
+                }
+            )
+        }
+    }
+
+    suspend fun fetchProjectGroups(
+        pin: String,
+        roll: String = ""
+    ): ApiResult<ProjectGroupsPayload> {
+        val params = mutableMapOf(
+            "action" to "project_groups_data",
+            "pin" to pin.trim()
+        )
+        if (roll.isNotBlank()) {
+            params["roll"] = roll.trim()
+        }
+        return executeGet(params) { json ->
+            ProjectGroupsPayload(
+                enabled = json.optBoolean("projectGroupsEnabled", json.optBoolean("enabled", false)),
+                groups = parseProjectGroups(json.optJSONArray("projectGroups") ?: json.optJSONArray("groups"))
+            )
+        }
+    }
+
+    suspend fun saveProjectGroup(
+        roll: String,
+        pin: String,
+        projectTitle: String,
+        memberRolls: List<Int>,
+        leaderRoll: Int,
+        leaderName: String
+    ): ApiResult<ProjectGroupSaveResult> {
+        val csvMembers = memberRolls.distinct().sorted().joinToString(",")
+        return executeGet(
+            mapOf(
+                "action" to "save_project_group",
+                "roll" to roll.trim(),
+                "pin" to pin.trim(),
+                "projectTitle" to projectTitle.trim(),
+                "members" to csvMembers,
+                "leaderRoll" to leaderRoll.toString(),
+                "leaderName" to leaderName.trim()
+            )
+        ) { json ->
+            val groupObj = json.optJSONObject("group")
+            val group = if (groupObj != null) {
+                parseSingleProjectGroup(groupObj)
+            } else {
+                ProjectGroup(
+                    groupId = json.optSafeString("groupId", json.optSafeString("id", "PG-${System.currentTimeMillis()}")),
+                    projectTitle = projectTitle.trim(),
+                    leaderRoll = leaderRoll.toString(),
+                    leaderName = leaderName.trim(),
+                    memberRolls = memberRolls.distinct().sorted().map { it.toString() },
+                    submittedByRoll = roll.trim(),
+                    createdAt = todayIstDateString()
+                )
+            }
+            ProjectGroupSaveResult(
+                group = group,
+                message = json.optString("msg", "Project group saved successfully.")
+                    .ifBlank { "Project group saved successfully." }
+            )
+        }
+    }
+
+    suspend fun signByInstructor(
+        pin: String,
+        reqId: String,
+        sirSig: String
+    ): ApiResult<SignApprovalResult> {
+        return executeGet(
+            mapOf(
+                "action" to "sign_sir",
+                "pin" to pin.trim(),
+                "reqId" to reqId.trim(),
+                "sirSig" to sirSig.trim()
+            )
+        ) { json ->
+            SignApprovalResult(
+                reqId = reqId,
+                message = json.optString("msg", "Approved by Trade Instructor.").ifBlank {
+                    "Approved by Trade Instructor."
+                },
+                pdfUrl = json.optString("pdfUrl", json.optString("pdf", "")).trim()
+            )
+        }
+    }
+
+    suspend fun signByPrincipal(
+        pin: String,
+        reqId: String,
+        principalSig: String
+    ): ApiResult<SignApprovalResult> {
+        return executeGet(
+            mapOf(
+                "action" to "sign_principal",
+                "pin" to pin.trim(),
+                "reqId" to reqId.trim(),
+                "principalSig" to principalSig.trim()
+            )
+        ) { json ->
+            SignApprovalResult(
+                reqId = reqId,
+                message = json.optString("msg", "Approved & Signed by Principal.").ifBlank {
+                    "Approved & Signed by Principal."
+                },
+                pdfUrl = json.optString("pdfUrl", json.optString("pdf", "")).trim()
+            )
+        }
+    }
+
+    suspend fun exportDailyAttendancePdf(pin: String): ApiResult<PdfExportResult> {
+        return executeGet(
+            mapOf(
+                "action" to "print_attendance",
+                "pin" to pin.trim()
+            )
+        ) { json ->
+            val pdfUrl = json.optString("pdfUrl", json.optString("pdf", "")).trim()
+            val msg = json.optString("msg", "Daily Attendance PDF generated.").ifBlank {
+                "Daily Attendance PDF generated."
+            }
+            PdfExportResult(pdfUrl = pdfUrl, message = msg)
+        }
+    }
+
+    suspend fun triggerEspTap(roll: String): ApiResult<EspTapResult> {
+        return executeGet(
+            mapOf(
+                "action" to "tap",
+                "key" to ESP_KEY,
+                "roll" to roll.trim()
+            )
+        ) { json ->
+            EspTapResult(
+                roll = roll.trim(),
+                mode = json.optString("mode", "PRESENT").ifBlank { "PRESENT" },
+                name = json.optString("name", "Roll #$roll").ifBlank { "Roll #$roll" },
+                time = json.optString("time", "-").ifBlank { "-" },
+                message = json.optString("msg", "").trim()
+            )
+        }
+    }
+
+    private fun parseAttendanceSummary(attObj: JSONObject?): AttendanceSummary {
+        val obj = attObj ?: JSONObject()
+        return AttendanceSummary(
+            todayStatus = obj.optString("todayStatus", "ABSENT").ifBlank { "ABSENT" },
+            inT = obj.optString("inT", "-").ifBlank { "-" },
+            outT = obj.optString("outT", "-").ifBlank { "-" },
+            present = obj.optSafeInt("present"),
+            half = obj.optSafeInt("half"),
+            total = obj.optSafeInt("total"),
+            pct = obj.optSafeInt("pct")
+        )
+    }
+
+    private fun parseParentAlerts(array: JSONArray?): List<ParentAlertItem> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                add(
+                    ParentAlertItem(
+                        id = item.optSafeString("id", item.optSafeString("alertId", "PA-$i")),
+                        date = item.optString("date", "-").ifBlank { "-" },
+                        time = item.optString("time", "").trim(),
+                        roll = item.optSafeString("roll"),
+                        studentName = item.optString("studentName", item.optString("name", "Trainee"))
+                            .ifBlank { "Trainee" },
+                        alertType = item.optString("alertType", item.optString("type", ParentAlertTypes.LEAVE_REASON))
+                            .ifBlank { ParentAlertTypes.LEAVE_REASON },
+                        message = item.optString("message", item.optString("reason", "")).trim()
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseSingleHoliday(obj: JSONObject?): HolidayAnnouncement? {
+        if (obj == null) return null
+        val date = obj.optString("date", "").trim()
+        val reason = obj.optString("reason", "").trim()
+        if (date.isBlank() && reason.isBlank()) return null
+        return HolidayAnnouncement(
+            id = obj.optSafeString("id", "HOL-$date"),
+            date = date.ifBlank { todayIstDateString() },
+            reason = reason.ifBlank { "Declared Holiday" },
+            postedBy = obj.optString("postedBy", "Trade Instructor").ifBlank { "Trade Instructor" },
+            postedAt = obj.optString("postedAt", "").trim()
+        )
+    }
+
+    private fun parseHolidays(array: JSONArray?): List<HolidayAnnouncement> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val parsed = parseSingleHoliday(array.optJSONObject(i)) ?: continue
+                add(parsed)
+            }
+        }
+    }
+
+    private fun parseSingleNotice(item: JSONObject): NoticeItem {
+        return NoticeItem(
+            id = item.optSafeString("id", item.optSafeString("noticeId", "NTC-${item.hashCode()}")),
+            title = item.optString("title", "Trade Notice").ifBlank { "Trade Notice" },
+            date = item.optString("date", todayIstDateString()).ifBlank { todayIstDateString() },
+            category = item.optString("category", item.optString("tag", "General")).ifBlank { "General" },
+            body = item.optString("body", item.optString("message", "")).trim(),
+            postedBy = item.optString("postedBy", "Govt. ITI Ranni").ifBlank { "Govt. ITI Ranni" }
+        )
+    }
+
+    private fun parseNotices(array: JSONArray?): List<NoticeItem> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                add(parseSingleNotice(obj))
+            }
+        }
+    }
+
+    private fun parseSingleProjectGroup(item: JSONObject): ProjectGroup {
+        val membersRaw = item.opt("members")
+        val memberList = when (membersRaw) {
+            is JSONArray -> buildList {
+                for (i in 0 until membersRaw.length()) {
+                    val v = membersRaw.opt(i)?.toString()?.trim().orEmpty()
+                    if (v.isNotBlank()) add(v)
+                }
+            }
+            is String -> membersRaw.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            else -> emptyList()
+        }
+        return ProjectGroup(
+            groupId = item.optSafeString("groupId", item.optSafeString("id", "PG-${item.hashCode()}")),
+            projectTitle = item.optString("projectTitle", item.optString("title", "Electronics Project"))
+                .ifBlank { "Electronics Project" },
+            leaderRoll = item.optSafeString("leaderRoll"),
+            leaderName = item.optString("leaderName", "").trim(),
+            memberRolls = memberList,
+            submittedByRoll = item.optSafeString("submittedByRoll"),
+            createdAt = item.optString("createdAt", item.optString("date", "")).trim()
+        )
+    }
+
+    private fun parseProjectGroups(array: JSONArray?): List<ProjectGroup> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                add(parseSingleProjectGroup(obj))
+            }
+        }
+    }
+
+    private fun parseStringList(array: JSONArray?): List<String> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val s = array.optString(i, "").trim()
+                if (s.isNotBlank()) add(s)
+            }
+        }
+    }
+
+    private suspend fun <T> executeGet(
+        params: Map<String, String>,
+        parser: (JSONObject) -> T
+    ): ApiResult<T> = withContext(Dispatchers.IO) {
+        try {
+            val urlBuilder = BASE_URL.toHttpUrl().newBuilder()
+            params.forEach { (key, value) ->
+                urlBuilder.addQueryParameter(key, value)
+            }
+            val request = Request.Builder()
+                .url(urlBuilder.build())
+                .get()
+                .header("Accept", "application/json")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val rawBody = response.body?.string()?.trim().orEmpty()
+                if (!response.isSuccessful) {
+                    return@withContext ApiResult.Error(
+                        "Server responded with HTTP ${response.code}. Please try again."
+                    )
+                }
+                if (rawBody.isEmpty()) {
+                    return@withContext ApiResult.Error(
+                        "Empty response received from Attendance Server."
+                    )
+                }
+                if (!rawBody.startsWith("{")) {
+                    return@withContext ApiResult.Error(
+                        "Unexpected response format from server. Please check network or script deployment."
+                    )
+                }
+
+                val json = JSONObject(rawBody)
+                val ok = json.optBoolean("ok", false)
+                if (!ok) {
+                    val errorMsg = json.optString("msg", "")
+                        .ifBlank { json.optString("error", "") }
+                        .ifBlank { "Request could not be completed. Please verify credentials." }
+                    return@withContext ApiResult.Error(errorMsg)
+                }
+
+                ApiResult.Success(parser(json))
+            }
+        } catch (e: IOException) {
+            ApiResult.Error("Network error: Unable to reach Govt. ITI Ranni server. Check internet connection.")
+        } catch (e: Exception) {
+            ApiResult.Error(e.localizedMessage ?: "An unexpected error occurred while communicating with the server.")
+        }
+    }
+
+    private fun JSONObject.optAttendanceClosed(): Boolean {
+        return when {
+            has("attendanceClosed") -> optBoolean("attendanceClosed", false)
+            has("isClosed") -> optBoolean("isClosed", false)
+            has("todayClosed") -> optBoolean("todayClosed", false)
+            has("closed") -> optBoolean("closed", false)
+            else -> false
+        }
+    }
+
+    private fun JSONObject.optSafeInt(key: String, default: Int = 0): Int {
+        if (!has(key) || isNull(key)) return default
+        val raw = opt(key)
+        return when (raw) {
+            is Number -> raw.toDouble().roundToInt()
+            is String -> raw.trim().toDoubleOrNull()?.roundToInt() ?: default
+            else -> default
+        }
+    }
+
+    private fun JSONObject.optSafeString(key: String, default: String = ""): String {
+        if (!has(key) || isNull(key)) return default
+        val raw = opt(key)
+        return raw?.toString()?.trim()?.ifBlank { default } ?: default
+    }
+}
