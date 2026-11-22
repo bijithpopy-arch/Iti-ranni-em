@@ -1,499 +1,208 @@
-package com.example.viewmodel
+package com.example
 
-import android.content.Context
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.example.data.ApiResult
-import com.example.data.AttendanceApiClient
-import com.example.data.EspTapResult
-import com.example.data.ParentAlertTypes
-import com.example.data.ParentDashboardData
-import com.example.data.PrincipalTab
-import com.example.data.StaffDashboardData
-import com.example.data.StaffTab
-import com.example.data.TraineeDashboardData
-import com.example.data.TraineeTab
-import com.example.data.UserRole
+import android.content.Intent
+import android.graphics.Color
+import android.os.Bundle
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.notifications.AttendanceNotificationHelper
-import com.example.security.SessionPreferences
-import com.example.updater.AppUpdateInfo
-import com.example.updater.AppUpdater
-import com.example.updater.UpdateCheckResult
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
+import com.example.security.BiometricAuthHelper
+import com.example.ui.components.AppUpdateDialog
+import com.example.ui.screens.LoginScreen
+import com.example.ui.screens.ParentDashboardScreen
+import com.example.ui.screens.PrincipalDashboardScreen
+import com.example.ui.screens.StaffDashboardScreen
+import com.example.ui.screens.TraineeDashboardScreen
+import com.example.ui.theme.ItiRanniTheme
+import com.example.viewmodel.AppViewModel
+import com.example.viewmodel.SessionScreen
 
-sealed interface SessionScreen {
-    data object Login : SessionScreen
-    data object TraineeDashboard : SessionScreen
-    data object ParentDashboard : SessionScreen
-    data object StaffDashboard : SessionScreen
-    data object PrincipalDashboard : SessionScreen
+class MainActivity : FragmentActivity() {
+
+    private val appViewModel: AppViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+        )
+        AttendanceNotificationHelper.ensureChannels(this)
+        handleIntentDeepLinks(intent)
+
+        setContent {
+            ItiRanniTheme {
+                ItiAttendanceApp(
+                    activity = this,
+                    viewModel = appViewModel
+                )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntentDeepLinks(intent)
+    }
+
+    private fun handleIntentDeepLinks(intent: Intent?) {
+        if (intent?.getBooleanExtra(AttendanceNotificationHelper.EXTRA_OPEN_NOTICES, false) == true) {
+            appViewModel.handleOpenNoticesDeepLink()
+            intent.removeExtra(AttendanceNotificationHelper.EXTRA_OPEN_NOTICES)
+        }
+    }
 }
+@Composable
+fun ItiAttendanceApp(
+    activity: FragmentActivity,
+    viewModel: AppViewModel
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val biometricAvailable = remember { BiometricAuthHelper.isBiometricAvailable(context) }
 
-data class AppUiState(
-    val screen: SessionScreen = SessionScreen.Login,
-
-    // Login & Remember-Me / Fingerprint Unlock state
-    val selectedRole: UserRole = UserRole.TRAINEE,
-    val rollInput: String = "",
-    val pinInput: String = "",
-    val rememberMe: Boolean = false,
-    val biometricEnabled: Boolean = false,
-    val hasSavedCredentials: Boolean = false,
-    val savedRoleLabel: String = "",
-    val biometricMessage: String? = null,
-    val isLoggingIn: Boolean = false,
-    val loginError: String? = null,
-
-    // In-App Self-Updater state
-    val isCheckingUpdate: Boolean = false,
-    val isDownloadingUpdate: Boolean = false,
-    val availableUpdate: AppUpdateInfo? = null,
-    val showUpdateDialog: Boolean = false,
-    val updateStatusMessage: String? = null,
-    val updateError: String? = null,
-
-    // Active session credentials
-    val activeRoll: String = "",
-    val activePin: String = "",
-    val activeStaffRole: UserRole = UserRole.TRADE_INSTRUCTOR,
-
-    // Notification / deep-link state
-    val openNoticesPending: Boolean = false,
-    val unreadNoticeCount: Int = 0,
-    val lastSeenNoticeId: String? = null,
-
-    // Trainee dashboard state
-    val traineeData: TraineeDashboardData? = null,
-    val selectedTraineeTab: TraineeTab = TraineeTab.HOME,
-    val isRefreshingTrainee: Boolean = false,
-    val traineeBannerError: String? = null,
-    val isSubmittingLeave: Boolean = false,
-    val leaveSubmitReqId: String? = null,
-    val leaveSubmitMessage: String? = null,
-    val leaveSubmitError: String? = null,
-
-    // Trainee project group submission state
-    val isSavingProjectGroup: Boolean = false,
-    val projectGroupSaveMessage: String? = null,
-    val projectGroupSaveError: String? = null,
-
-    // Parent dashboard state
-    val parentData: ParentDashboardData? = null,
-    val isRefreshingParent: Boolean = false,
-    val parentBannerError: String? = null,
-    val isSubmittingParentAlert: Boolean = false,
-    val parentAlertSuccessMessage: String? = null,
-    val parentAlertError: String? = null,
-    val parentNotificationDispatched: Boolean = false,
-
-    // Staff & Principal dashboard state
-    val staffData: StaffDashboardData? = null,
-    val selectedStaffTab: StaffTab = StaffTab.ATTENDANCE_REGISTER,
-    val selectedPrincipalTab: PrincipalTab = PrincipalTab.SCORECARD,
-    val isRefreshingStaff: Boolean = false,
-    val staffBannerError: String? = null,
-
-    // Staff Confirm & Close Attendance + Bulk Roll Call + Exceptions
-    val isClosingAttendance: Boolean = false,
-    val closeAttendanceMessage: String? = null,
-    val closeAttendanceError: String? = null,
-    val isRunningRollCallOp: Boolean = false,
-    val rollCallFeedbackMessage: String? = null,
-    val rollCallError: String? = null,
-
-    // Shop Floor & Instructor Scan Override state
-    val isUpdatingScanOverride: Boolean = false,
-    val scanOverrideMessage: String? = null,
-    val scanOverrideError: String? = null,
-    val isUpdatingShopFloor: Boolean = false,
-    val shopFloorActionMessage: String? = null,
-    val shopFloorActionError: String? = null,
-
-    // Duty Sign-off & Tool Crib state
-    val isUpdatingOps: Boolean = false,
-    val opsFeedbackMessage: String? = null,
-    val opsError: String? = null,
-
-    // Staff Holiday & Notice publishing state
-    val isPostingHoliday: Boolean = false,
-    val holidayPostMessage: String? = null,
-    val holidayPostError: String? = null,
-    val isPostingNotice: Boolean = false,
-    val noticePostMessage: String? = null,
-    val noticePostError: String? = null,
-
-    // Staff Project Groups toggle state
-    val isTogglingProjectAccess: Boolean = false,
-    val projectAccessMessage: String? = null,
-    val projectAccessError: String? = null,
-
-    // Staff & Principal leave approval / rejection state
-    val signingReqId: String? = null,
-    val approvalSuccessMessage: String? = null,
-    val approvalPdfUrl: String? = null,
-    val approvalError: String? = null,
-
-    // Staff attendance register state
-    val registerSearchQuery: String = "",
-    val registerStatusFilter: String = "ALL",
-    val isExportingPdf: Boolean = false,
-    val exportedPdfUrl: String? = null,
-    val exportPdfError: String? = null,
-
-    // Staff ESP terminal state
-    val espRollInput: String = "",
-    val isTappingEsp: Boolean = false,
-    val lastEspTap: EspTapResult? = null,
-    val espTapHistory: List<EspTapResult> = emptyList(),
-    val espTapError: String? = null
-)
-
-class AppViewModel(
-    private val apiClient: AttendanceApiClient = AttendanceApiClient()
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(AppUiState())
-    val uiState: StateFlow<AppUiState> = _uiState.asStateFlow()
-
-    private var sessionLoadedOnce = false
-
-    fun loadSavedSessionIfNeeded(context: Context): Boolean {
-        if (sessionLoadedOnce) return _uiState.value.hasSavedCredentials && _uiState.value.biometricEnabled
-        sessionLoadedOnce = true
-        val saved = SessionPreferences.load(context)
-        _uiState.update { state ->
-            state.copy(
-                selectedRole = if (saved.rememberMe) saved.role else state.selectedRole,
-                rollInput = if (saved.rememberMe) saved.roll else state.rollInput,
-                pinInput = if (saved.rememberMe) saved.pin else state.pinInput,
-                rememberMe = saved.rememberMe,
-                biometricEnabled = saved.biometricEnabled,
-                hasSavedCredentials = saved.hasCredentials,
-                savedRoleLabel = if (saved.hasCredentials) {
-                    if (saved.roll.isNotBlank()) "${saved.role.displayName} (Roll #${saved.roll})"
-                    else saved.role.displayName
-                } else ""
-            )
-        }
-        return saved.hasCredentials && saved.biometricEnabled
-    }
-
-    fun onRememberMeChanged(enabled: Boolean) {
-        _uiState.update {
-            it.copy(
-                rememberMe = enabled,
-                biometricEnabled = if (!enabled) false else it.biometricEnabled
+    val triggerFingerprintUnlock = remember(activity, viewModel) {
+        {
+            val state = viewModel.uiState.value
+            val label = state.savedRoleLabel.ifBlank { state.selectedRole.displayName }
+            BiometricAuthHelper.showFingerprintPrompt(
+                activity = activity,
+                roleLabel = label,
+                onAuthenticated = { viewModel.login(context) },
+                onFallbackToPassword = { msg ->
+                    if (!msg.isNullOrBlank()) {
+                        viewModel.setBiometricMessage(msg)
+                    }
+                }
             )
         }
     }
 
-    fun onBiometricEnabledChanged(enabled: Boolean) {
-        _uiState.update {
-            it.copy(
-                biometricEnabled = enabled,
-                rememberMe = if (enabled) true else it.rememberMe
-            )
+    LaunchedEffect(Unit) {
+        val shouldAutoPromptBiometric = viewModel.loadSavedSessionIfNeeded(context)
+        if (shouldAutoPromptBiometric && biometricAvailable) {
+            triggerFingerprintUnlock()
         }
+        viewModel.checkForAppUpdate(silentIfUpToDate = true)
     }
 
-    fun setBiometricMessage(message: String?) {
-        _uiState.update { it.copy(biometricMessage = message) }
-    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Crossfade(
+            targetState = uiState.screen,
+            animationSpec = tween(durationMillis = 240),
+            label = "session_screen_transition",
+            modifier = Modifier.fillMaxSize()
+        ) { screen ->
+            when (screen) {
+                SessionScreen.Login -> LoginScreen(
+                    uiState = uiState,
+                    biometricAvailable = biometricAvailable,
+                    onRoleSelected = viewModel::onRoleSelected,
+                    onRollChanged = viewModel::onRollInputChanged,
+                    onPinChanged = viewModel::onPinInputChanged,
+                    onRememberMeChanged = viewModel::onRememberMeChanged,
+                    onBiometricEnabledChanged = viewModel::onBiometricEnabledChanged,
+                    onFingerprintUnlockClick = triggerFingerprintUnlock,
+                    onClearSavedLogin = { viewModel.clearSavedSession(context) },
+                    onCheckUpdateClick = { viewModel.checkForAppUpdate(silentIfUpToDate = false) },
+                    onLoginClick = { viewModel.login(context) }
+                )
 
-    fun clearSavedSession(context: Context) {
-        SessionPreferences.clearAll(context)
-        _uiState.update {
-            it.copy(
-                rememberMe = false,
-                biometricEnabled = false,
-                hasSavedCredentials = false,
-                savedRoleLabel = "",
-                rollInput = "",
-                pinInput = "",
-                biometricMessage = "Saved login credentials cleared from this device."
-            )
-        }
-    }
+                SessionScreen.TraineeDashboard -> TraineeDashboardScreen(
+                    uiState = uiState,
+                    onTabSelected = { tab -> viewModel.onTraineeTabSelected(tab, context) },
+                    onSyncNotices = { viewModel.syncNoticeStateAndPopup(context) },
+                    onMarkNoticesSeen = { viewModel.markNoticesSeen(context) },
+                    onRefresh = viewModel::refreshTraineeDashboard,
+                    onLogout = viewModel::logout,
+                    onSubmitLeave = viewModel::submitLeaveRequest,
+                    onDismissFeedback = viewModel::dismissLeaveFeedback,
+                    onSaveProjectGroup = viewModel::saveProjectGroup,
+                    onRefreshProjectGroups = viewModel::refreshProjectGroupsForTrainee,
+                    onDismissProjectFeedback = viewModel::dismissProjectGroupFeedback,
+                    onCheckUpdate = { viewModel.checkForAppUpdate(silentIfUpToDate = false) }
+                )
 
-    fun checkForAppUpdate(silentIfUpToDate: Boolean = false) {
-        if (_uiState.value.isCheckingUpdate) return
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isCheckingUpdate = true,
-                    updateError = null,
-                    updateStatusMessage = if (!silentIfUpToDate) "Checking GitHub Releases..." else null
+                SessionScreen.ParentDashboard -> ParentDashboardScreen(
+                    uiState = uiState,
+                    onRefresh = viewModel::refreshParentDashboard,
+                    onLogout = viewModel::logout,
+                    onEvaluateNotification = { viewModel.evaluateParentNotification(context) },
+                    onSubmitBunkAlert = viewModel::submitParentBunkAlert,
+                    onSubmitLeaveReason = viewModel::submitParentLeaveReason,
+                    onDismissFeedback = viewModel::dismissParentAlertFeedback,
+                    onCheckUpdate = { viewModel.checkForAppUpdate(silentIfUpToDate = false) }
+                )
+                                SessionScreen.StaffDashboard -> StaffDashboardScreen(
+                    uiState = uiState,
+                    onTabSelected = viewModel::onStaffTabSelected,
+                    onRefresh = viewModel::refreshStaffDashboard,
+                    onLogout = viewModel::logout,
+                    onCheckUpdate = { viewModel.checkForAppUpdate(silentIfUpToDate = false) },
+                    onApproveAndSign = viewModel::approveAndSignLeave,
+                    onRejectLeave = viewModel::rejectLeaveRequest,
+                    onDismissApprovalFeedback = viewModel::dismissApprovalFeedback,
+                    onRegisterSearchChanged = viewModel::onRegisterSearchChanged,
+                    onRegisterStatusFilterChanged = viewModel::onRegisterStatusFilterChanged,
+                    onExportPdf = viewModel::exportDailyAttendancePdf,
+                    onConfirmCloseAttendance = viewModel::confirmAndCloseTodayAttendance,
+                    onDismissCloseFeedback = viewModel::dismissCloseAttendanceFeedback,
+                    onBulkMorningRollCall = { viewModel.runBulkMorningRollCall("PRESENT") },
+                    onMarkException = viewModel::markTraineeException,
+                    onSendInstantParentAlert = viewModel::sendInstantParentAlert,
+                    onToggleEarlyClassLogout = viewModel::toggleEarlyClassLogoutOverride,
+                    onToggleShopFloorReleaseNow = viewModel::toggleShopFloorReleaseNowOverride,
+                    onUpdateShopFloorMember = viewModel::updateShopFloorMember,
+                    onRecordShopFloorCardLogout = viewModel::triggerShopFloorCardLogout,
+                    onVerifyShopFloorLogout = viewModel::verifyShopFloorLogout,
+                    onSignOffDuty = viewModel::signOffDailyDuty,
+                    onLogToolCrib = viewModel::logToolCribIssue,
+                    onPostNotice = { title, cat, body, onReset ->
+                        viewModel.postTradeNotice(title, cat, body, pinned = false, onSuccessReset = onReset)
+                    },
+                    onPostHoliday = viewModel::postHolidayAnnouncement,
+                    onToggleProjectGroupsAccess = viewModel::toggleProjectGroupsAccess,
+                    onRefreshProjectGroups = viewModel::refreshProjectGroupsForStaff,
+                    onEspRollChanged = viewModel::onEspRollInputChanged,
+                    onTriggerManualTap = viewModel::triggerManualEspTap
+                )
+
+                SessionScreen.PrincipalDashboard -> PrincipalDashboardScreen(
+                    uiState = uiState,
+                    onTabSelected = viewModel::onPrincipalTabSelected,
+                    onRefresh = viewModel::refreshStaffDashboard,
+                    onLogout = viewModel::logout,
+                    onCheckUpdate = { viewModel.checkForAppUpdate(silentIfUpToDate = false) },
+                    onExportPdf = viewModel::exportDailyAttendancePdf,
+                    onApproveAndSign = viewModel::approveAndSignLeave,
+                    onRejectLeave = viewModel::rejectLeaveRequest,
+                    onDismissApprovalFeedback = viewModel::dismissApprovalFeedback,
+                    onPublishPinnedBroadcast = { title, cat, body, onReset ->
+                        viewModel.postTradeNotice(title, cat, body, pinned = true, onSuccessReset = onReset)
+                    }
                 )
             }
-            when (val result = AppUpdater.checkForUpdate()) {
-                is UpdateCheckResult.UpdateAvailable -> {
-                    _uiState.update {
-                        it.copy(
-                            isCheckingUpdate = false,
-                            availableUpdate = result.info,
-                            showUpdateDialog = true,
-                            updateStatusMessage = "Update v${result.info.versionName} available!",
-                            updateError = null
-                        )
-                    }
-                }
-                is UpdateCheckResult.UpToDate -> {
-                    _uiState.update {
-                        it.copy(
-                            isCheckingUpdate = false,
-                            availableUpdate = null,
-                            showUpdateDialog = !silentIfUpToDate,
-                            updateStatusMessage = if (silentIfUpToDate) null else "You are on the latest version (v${result.currentVersion}).",
-                            updateError = null
-                        )
-                    }
-                }
-                is UpdateCheckResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isCheckingUpdate = false,
-                            showUpdateDialog = !silentIfUpToDate,
-                            updateStatusMessage = null,
-                            updateError = if (silentIfUpToDate) null else result.message
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    fun startApkUpdateDownload(context: Context) {
-        val info = _uiState.value.availableUpdate ?: return
-        if (!AppUpdater.canRequestPackageInstalls(context)) {
-            _uiState.update {
-                it.copy(
-                    updateStatusMessage = "Please enable 'Allow from this source' for Govt. ITI Ranni, then tap Install Update again."
-                )
-            }
-            AppUpdater.openUnknownSourcesSettings(context)
-            return
         }
 
-        AppUpdater.downloadAndInstallApk(
-            context = context,
-            updateInfo = info,
-            onStarted = {
-                _uiState.update {
-                    it.copy(
-                        isDownloadingUpdate = true,
-                        updateStatusMessage = "Downloading v${info.versionName} via DownloadManager...",
-                        updateError = null
-                    )
-                }
-            },
-            onComplete = { success, msg ->
-                _uiState.update {
-                    it.copy(
-                        isDownloadingUpdate = false,
-                        updateStatusMessage = if (success) msg else null,
-                        updateError = if (success) null else msg
-                    )
-                }
-            }
+        AppUpdateDialog(
+            uiState = uiState,
+            onDownloadAndInstall = { viewModel.startApkUpdateDownload(context) },
+            onDismiss = viewModel::dismissUpdateDialog
         )
     }
-
-    fun dismissUpdateDialog() {
-        _uiState.update {
-            it.copy(
-                showUpdateDialog = false,
-                updateStatusMessage = null,
-                updateError = null
-            )
-        }
-    }
-
-    fun handleOpenNoticesDeepLink() {
-        _uiState.update { state ->
-            when (state.screen) {
-                SessionScreen.TraineeDashboard -> state.copy(
-                    selectedTraineeTab = TraineeTab.NOTICES,
-                    openNoticesPending = false
-                )
-                SessionScreen.Login -> state.copy(
-                    selectedRole = UserRole.TRAINEE,
-                    openNoticesPending = true
-                )
-                else -> state.copy(openNoticesPending = false)
-            }
-        }
-    }
-
-    fun onRoleSelected(role: UserRole) {
-        _uiState.update { it.copy(selectedRole = role, loginError = null) }
-    }
-
-    fun onRollInputChanged(value: String) {
-        val digitsOnly = value.filter { it.isDigit() }.take(2)
-        _uiState.update { it.copy(rollInput = digitsOnly, loginError = null) }
-    }
-
-    fun onPinInputChanged(value: String) {
-        val digitsOnly = value.filter { it.isDigit() }.take(12)
-        _uiState.update { it.copy(pinInput = digitsOnly, loginError = null) }
-    }
-
-    fun login(context: Context? = null) {
-        val current = _uiState.value
-        if (current.isLoggingIn) return
-
-        when (current.selectedRole) {
-            UserRole.TRAINEE -> {
-                val rollNum = current.rollInput.toIntOrNull()
-                if (rollNum == null || rollNum !in 1..33) {
-                    _uiState.update { it.copy(loginError = "Please enter a valid Roll Number between 1 and 33.") }
-                    return
-                }
-                if (current.pinInput.isBlank()) {
-                    _uiState.update { it.copy(loginError = "Please enter your Trainee PIN.") }
-                    return
-                }
-                performTraineeLogin(rollNum.toString(), current.pinInput.trim(), context)
-            }
-            UserRole.PARENT -> {
-                val rollNum = current.rollInput.toIntOrNull()
-                if (rollNum == null || rollNum !in 1..33) {
-                    _uiState.update { it.copy(loginError = "Please enter your ward's Roll Number (1–33).") }
-                    return
-                }
-                if (current.pinInput.isBlank()) {
-                    _uiState.update { it.copy(loginError = "Please enter your Parent PIN.") }
-                    return
-                }
-                performParentLogin(rollNum.toString(), current.pinInput.trim(), context)
-            }
-            UserRole.TRADE_INSTRUCTOR, UserRole.PRINCIPAL -> {
-                if (current.pinInput.isBlank()) {
-                    _uiState.update { it.copy(loginError = "Please enter your Staff PIN.") }
-                    return
-                }
-                performStaffLogin(current.selectedRole, current.pinInput.trim(), context)
-            }
-        }
-    }
-
-    private fun persistSessionAfterSuccess(
-        context: Context?,
-        role: UserRole,
-        roll: String,
-        pin: String
-    ) {
-        if (context == null) return
-        val state = _uiState.value
-        SessionPreferences.save(
-            context = context,
-            rememberMe = state.rememberMe,
-            biometricEnabled = state.biometricEnabled,
-            role = role,
-            roll = roll,
-            pin = pin
-        )
-    }
-
-    private fun performTraineeLogin(roll: String, pin: String, context: Context?) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoggingIn = true, loginError = null, biometricMessage = null) }
-            when (val result = apiClient.fetchTraineeData(roll = roll, pin = pin)) {
-                is ApiResult.Success -> {
-                    persistSessionAfterSuccess(context, UserRole.TRAINEE, roll, pin)
-                    _uiState.update { state ->
-                        val initialTab = if (state.openNoticesPending) TraineeTab.NOTICES else TraineeTab.HOME
-                        state.copy(
-                            isLoggingIn = false,
-                            screen = SessionScreen.TraineeDashboard,
-                            selectedTraineeTab = initialTab,
-                            openNoticesPending = false,
-                            activeRoll = roll,
-                            activePin = pin,
-                            hasSavedCredentials = state.rememberMe,
-                            traineeData = result.data,
-                            traineeBannerError = null,
-                            leaveSubmitReqId = null,
-                            leaveSubmitMessage = null,
-                            leaveSubmitError = null,
-                            projectGroupSaveMessage = null,
-                            projectGroupSaveError = null
-                        )
-                    }
-                }
-                is ApiResult.Error -> {
-                    _uiState.update { it.copy(isLoggingIn = false, loginError = result.message) }
-                }
-            }
-        }
-    }
-
-    private fun performParentLogin(roll: String, pin: String, context: Context?) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoggingIn = true, loginError = null, biometricMessage = null) }
-            when (val result = apiClient.fetchParentData(roll = roll, pin = pin)) {
-                is ApiResult.Success -> {
-                    persistSessionAfterSuccess(context, UserRole.PARENT, roll, pin)
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoggingIn = false,
-                            screen = SessionScreen.ParentDashboard,
-                            activeRoll = roll,
-                            activePin = pin,
-                            hasSavedCredentials = state.rememberMe,
-                            parentData = result.data,
-                            parentBannerError = null,
-                            parentAlertSuccessMessage = null,
-                            parentAlertError = null,
-                            parentNotificationDispatched = false
-                        )
-                    }
-                }
-                is ApiResult.Error -> {
-                    _uiState.update { it.copy(isLoggingIn = false, loginError = result.message) }
-                }
-            }
-        }
-    }
-
-    private fun performStaffLogin(role: UserRole, pin: String, context: Context?) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoggingIn = true, loginError = null, biometricMessage = null) }
-            when (val result = apiClient.fetchStaffData(pin = pin)) {
-                is ApiResult.Success -> {
-                    persistSessionAfterSuccess(context, role, "", pin)
-                    val targetScreen = if (role == UserRole.PRINCIPAL) {
-                        SessionScreen.PrincipalDashboard
-                    } else {
-                        SessionScreen.StaffDashboard
-                    }
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoggingIn = false,
-                            screen = targetScreen,
-                            activeStaffRole = role,
-                            activePin = pin,
-                            hasSavedCredentials = state.rememberMe,
-                            staffData = result.data,
-                            selectedStaffTab = StaffTab.ATTENDANCE_REGISTER,
-                            selectedPrincipalTab = PrincipalTab.SCORECARD,
-                            staffBannerError = null,
-                            closeAttendanceMessage = null,
-                            closeAttendanceError = null,
-                            rollCallFeedbackMessage = null,
-                            rollCallError = null,
-                            scanOverrideMessage = null,
-                            scanOverrideError = null,
-                            shopFloorActionMessage = null,
-                            shopFloorActionError = null,
-                            opsFeedbackMessage = null,
-                            opsError = null,
-                            holidayPostMessage = null,
-                            holidayPostError = null,
-                            noticePostMessage = null,
-                            noticePostError = null,
-                           
+}
