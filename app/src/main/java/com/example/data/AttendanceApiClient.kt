@@ -69,6 +69,25 @@ class AttendanceApiClient {
             val holidays = parseHolidays(json.optJSONArray("holidays"))
             val todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
                 ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) }
+            val notices = parseNotices(json.optJSONArray("notices"))
+            val pinnedBroadcast = parseSingleNoticeOrNull(json.optJSONObject("pinnedBroadcast"))
+                ?: notices.firstOrNull { it.isPinned }
+            val myShopFloor = parseSingleShopFloorOrNull(json.optJSONObject("myShopFloor"))
+                ?: if (attendance.pct < AttendanceMath.EXAM_THRESHOLD_PCT && attendance.total > 0) {
+                    ShopFloorEntry(
+                        id = "AUTO-${roll.trim()}",
+                        date = attendanceDate,
+                        roll = roll.trim(),
+                        name = name,
+                        attendancePct = attendance.pct,
+                        sessionType = "POST_3PM",
+                        scheduledEndTime = "05:00 PM",
+                        assignedReason = "Auto-flagged (<80% attendance)",
+                        status = "SCHEDULED"
+                    )
+                } else {
+                    null
+                }
 
             TraineeDashboardData(
                 roll = roll.trim(),
@@ -80,7 +99,10 @@ class AttendanceApiClient {
                 closedAt = json.optString("closedAt", "").trim(),
                 todayHoliday = todayHoliday,
                 holidays = holidays,
-                notices = parseNotices(json.optJSONArray("notices")),
+                notices = notices,
+                pinnedBroadcast = pinnedBroadcast,
+                myShopFloorEntry = myShopFloor,
+                scanOverrides = parseScanOverrides(json.optJSONObject("scanOverrides")),
                 projectGroupsEnabled = json.optBoolean("projectGroupsEnabled", false),
                 projectGroups = parseProjectGroups(json.optJSONArray("projectGroups")),
                 dutyItems = parseStringList(json.optJSONArray("dutyItems"))
@@ -105,6 +127,11 @@ class AttendanceApiClient {
             val holidays = parseHolidays(json.optJSONArray("holidays"))
             val todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
                 ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) }
+            val notices = parseNotices(json.optJSONArray("notices"))
+            val pinnedBroadcast = parseSingleNoticeOrNull(json.optJSONObject("pinnedBroadcast"))
+                ?: notices.firstOrNull { it.isPinned }
+            val wardShopFloor = parseSingleShopFloorOrNull(json.optJSONObject("wardShopFloor"))
+                ?: parseSingleShopFloorOrNull(json.optJSONObject("myShopFloor"))
 
             ParentDashboardData(
                 roll = resolvedRoll,
@@ -115,7 +142,9 @@ class AttendanceApiClient {
                 closedAt = json.optString("closedAt", "").trim(),
                 todayHoliday = todayHoliday,
                 holidays = holidays,
-                notices = parseNotices(json.optJSONArray("notices")),
+                notices = notices,
+                pinnedBroadcast = pinnedBroadcast,
+                wardShopFloorEntry = wardShopFloor,
                 parentAlerts = parseParentAlerts(json.optJSONArray("parentAlerts"))
             )
         }
@@ -179,9 +208,32 @@ class AttendanceApiClient {
             )
         ) { json ->
             val attArray = json.optJSONArray("allAttendance") ?: JSONArray()
+            // Determine cohort max total days so a corrupt Total: 1 never skews percentage to 3500%
+            var maxRecordedTotal = 0
+            for (i in 0 until attArray.length()) {
+                val item = attArray.optJSONObject(i) ?: continue
+                val p = item.optSafeInt("present")
+                val h = item.optSafeInt("half")
+                val t = AttendanceMath.safeTotalDays(p, h, item.optSafeInt("total"))
+                if (t > maxRecordedTotal) maxRecordedTotal = t
+            }
+
             val attendanceList = buildList {
                 for (i in 0 until attArray.length()) {
                     val item = attArray.optJSONObject(i) ?: continue
+                    val present = item.optSafeInt("present").coerceAtLeast(0)
+                    val half = item.optSafeInt("half").coerceAtLeast(0)
+                    val rawTotal = item.optSafeInt("total")
+                    val safeTotal = maxOf(
+                        AttendanceMath.safeTotalDays(present, half, rawTotal),
+                        if (rawTotal <= 1 && maxRecordedTotal > 1) maxRecordedTotal else 0
+                    )
+                    val clampedPct = AttendanceMath.computePercentage(
+                        present = present,
+                        half = half,
+                        rawTotal = safeTotal,
+                        rawPct = item.optSafeInt("pct")
+                    )
                     add(
                         StaffAttendanceRecord(
                             roll = item.optSafeString("roll"),
@@ -189,10 +241,10 @@ class AttendanceApiClient {
                             todayStatus = item.optString("todayStatus", "ABSENT").ifBlank { "ABSENT" },
                             inT = item.optString("inT", "-").ifBlank { "-" },
                             outT = item.optString("outT", "-").ifBlank { "-" },
-                            present = item.optSafeInt("present"),
-                            half = item.optSafeInt("half"),
-                            total = item.optSafeInt("total"),
-                            pct = item.optSafeInt("pct")
+                            present = present,
+                            half = half,
+                            total = safeTotal,
+                            pct = clampedPct
                         )
                     )
                 }
@@ -221,6 +273,16 @@ class AttendanceApiClient {
             val holidays = parseHolidays(json.optJSONArray("holidays"))
             val todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
                 ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) }
+            val notices = parseNotices(json.optJSONArray("notices"))
+            val pinnedBroadcast = parseSingleNoticeOrNull(json.optJSONObject("pinnedBroadcast"))
+                ?: notices.firstOrNull { it.isPinned }
+
+            val serverShopFloor = parseShopFloorList(json.optJSONArray("shopFloorList"))
+            val mergedShopFloor = mergeAutoFlaggedShopFloor(
+                attendanceList = attendanceList,
+                serverList = serverShopFloor,
+                date = attendanceDate
+            )
 
             StaffDashboardData(
                 allAttendance = attendanceList,
@@ -231,12 +293,257 @@ class AttendanceApiClient {
                 closedAt = json.optString("closedAt", "").trim(),
                 todayHoliday = todayHoliday,
                 holidays = holidays,
-                notices = parseNotices(json.optJSONArray("notices")),
+                notices = notices,
+                pinnedBroadcast = pinnedBroadcast,
+                shopFloorList = mergedShopFloor,
+                scanOverrides = parseScanOverrides(json.optJSONObject("scanOverrides")),
+                toolCribLogs = parseToolCribLogs(json.optJSONArray("toolCribLogs")),
+                todayDutySignOff = parseDutySignOff(json.optJSONObject("todayDutySignOff")),
+                lastScannerSyncTime = json.optString("lastScannerSync", "").trim(),
                 projectGroupsEnabled = json.optBoolean("projectGroupsEnabled", false),
                 projectGroups = parseProjectGroups(json.optJSONArray("projectGroups"))
             )
         }
     }
+
+    // ---------- Shop Floor & Instructor Scan Override Endpoints ----------
+
+    suspend fun setScanOverride(
+        pin: String,
+        earlyClassLogoutEnabled: Boolean,
+        shopFloorReleaseNowEnabled: Boolean
+    ): ApiResult<ScanOverrideResult> {
+        return executeGet(
+            mapOf(
+                "action" to "set_scan_override",
+                "pin" to pin.trim(),
+                "earlyClassLogout" to earlyClassLogoutEnabled.toString(),
+                "shopFloorReleaseNow" to shopFloorReleaseNowEnabled.toString()
+            )
+        ) { json ->
+            val state = parseScanOverrides(json.optJSONObject("scanOverrides"))
+                .copy(
+                    earlyClassLogoutEnabled = json.optBoolean("earlyClassLogoutEnabled", earlyClassLogoutEnabled),
+                    shopFloorReleaseNowEnabled = json.optBoolean("shopFloorReleaseNowEnabled", shopFloorReleaseNowEnabled)
+                )
+            ScanOverrideResult(
+                state = state,
+                message = json.optString("msg", "Scanner override settings updated.")
+                    .ifBlank { "Scanner override settings updated." }
+            )
+        }
+    }
+
+    suspend fun setShopFloorMember(
+        pin: String,
+        roll: String,
+        operation: String, // "ADD" or "REMOVE"
+        sessionType: String = "POST_3PM",
+        scheduledEndTime: String = "05:00 PM"
+    ): ApiResult<SimpleActionResult> {
+        return executeGet(
+            mapOf(
+                "action" to "set_shop_floor_member",
+                "pin" to pin.trim(),
+                "roll" to roll.trim(),
+                "operation" to operation.trim().uppercase(),
+                "sessionType" to sessionType.trim().uppercase(),
+                "endTime" to scheduledEndTime.trim()
+            )
+        ) { json ->
+            SimpleActionResult(
+                message = json.optString("msg", "Shop Floor roster updated for Roll #$roll.")
+                    .ifBlank { "Shop Floor roster updated for Roll #$roll." }
+            )
+        }
+    }
+
+    suspend fun triggerShopFloorCardLogout(roll: String): ApiResult<EspTapResult> {
+        return executeGet(
+            mapOf(
+                "action" to "shop_floor_card_logout",
+                "key" to ESP_KEY,
+                "roll" to roll.trim()
+            )
+        ) { json ->
+            EspTapResult(
+                roll = roll.trim(),
+                mode = json.optString("mode", "SHOP_FLOOR_OUT").ifBlank { "SHOP_FLOOR_OUT" },
+                name = json.optString("name", "Roll #$roll").ifBlank { "Roll #$roll" },
+                time = json.optString("checkOutCardScanTime", json.optString("time", "-")).ifBlank { "-" },
+                message = json.optString("msg", "Shop Floor ID-card logout recorded.").trim()
+            )
+        }
+    }
+
+    suspend fun verifyShopFloorLogout(
+        pin: String,
+        roll: String,
+        date: String = todayIstDateString()
+    ): ApiResult<SimpleActionResult> {
+        return executeGet(
+            mapOf(
+                "action" to "verify_shop_floor_logout",
+                "pin" to pin.trim(),
+                "roll" to roll.trim(),
+                "date" to date.trim()
+            )
+        ) { json ->
+            SimpleActionResult(
+                message = json.optString("msg", "Shop Floor logout verified for Roll #$roll.")
+                    .ifBlank { "Shop Floor logout verified for Roll #$roll." }
+            )
+        }
+    }
+
+    // ---------- Bulk Roll Call, Quick Exceptions, Duty & Tool Crib, Instant Parent Alert ----------
+
+    suspend fun bulkMorningRollCall(
+        pin: String,
+        status: String = "PRESENT"
+    ): ApiResult<SimpleActionResult> {
+        return executeGet(
+            mapOf(
+                "action" to "bulk_roll_call",
+                "pin" to pin.trim(),
+                "status" to status.trim().uppercase(),
+                "date" to todayIstDateString()
+            )
+        ) { json ->
+            SimpleActionResult(
+                message = json.optString("msg", "Bulk morning roll call applied.")
+                    .ifBlank { "Bulk morning roll call applied." }
+            )
+        }
+    }
+
+    suspend fun markAttendanceException(
+        pin: String,
+        roll: String,
+        exceptionType: String // "LATE", "HALF-DAY", "ON-DUTY", "PRESENT", "ABSENT"
+    ): ApiResult<SimpleActionResult> {
+        return executeGet(
+            mapOf(
+                "action" to "mark_exception",
+                "pin" to pin.trim(),
+                "roll" to roll.trim(),
+                "exceptionType" to exceptionType.trim().uppercase(),
+                "date" to todayIstDateString()
+            )
+        ) { json ->
+            SimpleActionResult(
+                message = json.optString("msg", "Updated Roll #$roll to $exceptionType.")
+                    .ifBlank { "Updated Roll #$roll to $exceptionType." }
+            )
+        }
+    }
+
+    suspend fun signOffDailyDuty(
+        pin: String,
+        date: String,
+        pairLabel: String,
+        note: String
+    ): ApiResult<DutySignOffResult> {
+        return executeGet(
+            mapOf(
+                "action" to "sign_off_duty",
+                "pin" to pin.trim(),
+                "date" to date.trim(),
+                "pairLabel" to pairLabel.trim(),
+                "note" to note.trim()
+            )
+        ) { json ->
+            val rec = DutySignOffRecord(
+                date = date,
+                pairLabel = pairLabel,
+                signedOff = true,
+                signedAt = json.optString("signedAt", "").trim(),
+                note = note.trim()
+            )
+            DutySignOffResult(
+                record = rec,
+                message = json.optString("msg", "Duty verified & signed off for $pairLabel.")
+                    .ifBlank { "Duty verified & signed off for $pairLabel." }
+            )
+        }
+    }
+
+    suspend fun logToolCribIssue(
+        pin: String,
+        itemName: String,
+        conditionStatus: String,
+        notes: String
+    ): ApiResult<ToolCribLogResult> {
+        return executeGet(
+            mapOf(
+                "action" to "log_tool_crib_issue",
+                "pin" to pin.trim(),
+                "itemName" to itemName.trim(),
+                "conditionStatus" to conditionStatus.trim().uppercase(),
+                "notes" to notes.trim()
+            )
+        ) { json ->
+            val entry = ToolCribLogEntry(
+                id = json.optSafeString("id", "TC-${System.currentTimeMillis()}"),
+                date = json.optString("date", todayIstDateString()),
+                time = json.optString("time", ""),
+                itemName = itemName.trim(),
+                conditionStatus = conditionStatus.trim().uppercase(),
+                notes = notes.trim(),
+                reportedBy = json.optString("reportedBy", "Trade Instructor")
+            )
+            ToolCribLogResult(
+                entry = entry,
+                message = json.optString("msg", "Tool Crib / Lab equipment log recorded.")
+                    .ifBlank { "Tool Crib / Lab equipment log recorded." }
+            )
+        }
+    }
+
+    suspend fun sendInstructorParentAlert(
+        pin: String,
+        roll: String,
+        alertType: String,
+        message: String
+    ): ApiResult<ParentAlertSubmitResult> {
+        return executeGet(
+            mapOf(
+                "action" to "send_instructor_parent_alert",
+                "pin" to pin.trim(),
+                "roll" to roll.trim(),
+                "alertType" to alertType.trim().uppercase(),
+                "message" to message.trim()
+            )
+        ) { json ->
+            ParentAlertSubmitResult(
+                alertId = json.optSafeString("alertId", json.optSafeString("id", "")),
+                message = json.optString("msg", "Parent warning alert logged for Roll #$roll.")
+                    .ifBlank { "Parent warning alert logged for Roll #$roll." }
+            )
+        }
+    }
+
+    suspend fun rejectLeaveRequest(
+        pin: String,
+        reqId: String,
+        reason: String
+    ): ApiResult<SimpleActionResult> {
+        return executeGet(
+            mapOf(
+                "action" to "reject_leave",
+                "pin" to pin.trim(),
+                "reqId" to reqId.trim(),
+                "reason" to reason.trim()
+            )
+        ) { json ->
+            SimpleActionResult(
+                message = json.optString("msg", "Request $reqId rejected.")
+                    .ifBlank { "Request $reqId rejected." }
+            )
+        }
+    }
+
+    // ---------- Existing Core Actions ----------
 
     suspend fun confirmCloseAttendance(
         pin: String,
@@ -299,7 +606,9 @@ class AttendanceApiClient {
         title: String,
         category: String,
         body: String,
-        date: String = todayIstDateString()
+        date: String = todayIstDateString(),
+        pinned: Boolean = false,
+        postedBy: String = "Trade Instructor"
     ): ApiResult<NoticePostResult> {
         return executeGet(
             mapOf(
@@ -308,7 +617,9 @@ class AttendanceApiClient {
                 "title" to title.trim(),
                 "category" to category.trim(),
                 "body" to body.trim(),
-                "date" to date.trim()
+                "date" to date.trim(),
+                "pinned" to pinned.toString(),
+                "postedBy" to postedBy.trim()
             )
         ) { json ->
             val noticeObj = json.optJSONObject("notice")
@@ -321,13 +632,14 @@ class AttendanceApiClient {
                     date = date.trim(),
                     category = category.trim(),
                     body = body.trim(),
-                    postedBy = json.optString("postedBy", "Trade Instructor")
+                    postedBy = json.optString("postedBy", postedBy),
+                    isPinned = pinned
                 )
             }
             NoticePostResult(
                 notice = notice,
-                message = json.optString("msg", "Notice published to students & parents.")
-                    .ifBlank { "Notice published to students & parents." }
+                message = json.optString("msg", if (pinned) "Pinned Principal Broadcast published to all dashboards." else "Notice published to students & parents.")
+                    .ifBlank { "Notice published." }
             )
         }
     }
@@ -496,16 +808,135 @@ class AttendanceApiClient {
         }
     }
 
+    // ---------- Parsers with Strict AttendanceMath Guard ----------
+
     private fun parseAttendanceSummary(attObj: JSONObject?): AttendanceSummary {
         val obj = attObj ?: JSONObject()
+        val present = obj.optSafeInt("present").coerceAtLeast(0)
+        val half = obj.optSafeInt("half").coerceAtLeast(0)
+        val rawTotal = obj.optSafeInt("total")
+        val safeTotal = AttendanceMath.safeTotalDays(present, half, rawTotal)
+        val clampedPct = AttendanceMath.computePercentage(
+            present = present,
+            half = half,
+            rawTotal = safeTotal,
+            rawPct = obj.optSafeInt("pct")
+        )
         return AttendanceSummary(
             todayStatus = obj.optString("todayStatus", "ABSENT").ifBlank { "ABSENT" },
             inT = obj.optString("inT", "-").ifBlank { "-" },
             outT = obj.optString("outT", "-").ifBlank { "-" },
-            present = obj.optSafeInt("present"),
-            half = obj.optSafeInt("half"),
-            total = obj.optSafeInt("total"),
-            pct = obj.optSafeInt("pct")
+            present = present,
+            half = half,
+            total = safeTotal,
+            pct = clampedPct,
+            streakDays = obj.optSafeInt("streakDays", present.coerceAtMost(15))
+        )
+    }
+
+    private fun mergeAutoFlaggedShopFloor(
+        attendanceList: List<StaffAttendanceRecord>,
+        serverList: List<ShopFloorEntry>,
+        date: String
+    ): List<ShopFloorEntry> {
+        val byRoll = LinkedHashMap<String, ShopFloorEntry>()
+        serverList.forEach { entry ->
+            byRoll[entry.roll] = entry
+        }
+        attendanceList.forEach { rec ->
+            if (rec.pct < AttendanceMath.EXAM_THRESHOLD_PCT && rec.total > 0 && !byRoll.containsKey(rec.roll)) {
+                byRoll[rec.roll] = ShopFloorEntry(
+                    id = "AUTO-${rec.roll}-$date",
+                    date = date,
+                    roll = rec.roll,
+                    name = rec.name,
+                    attendancePct = rec.pct,
+                    sessionType = "POST_3PM",
+                    scheduledEndTime = "05:00 PM",
+                    assignedReason = "Auto (<80%)",
+                    status = "SCHEDULED",
+                    isManualOverride = false
+                )
+            }
+        }
+        return byRoll.values.sortedBy { it.attendancePct }
+    }
+
+    private fun parseSingleShopFloorOrNull(obj: JSONObject?): ShopFloorEntry? {
+        if (obj == null) return null
+        val roll = obj.optSafeString("roll")
+        if (roll.isBlank()) return null
+        return ShopFloorEntry(
+            id = obj.optSafeString("id", "SF-$roll"),
+            date = obj.optString("date", todayIstDateString()).ifBlank { todayIstDateString() },
+            roll = roll,
+            name = obj.optString("name", "Roll #$roll").ifBlank { "Roll #$roll" },
+            attendancePct = obj.optSafeInt("attendancePct", obj.optSafeInt("pct")).coerceIn(0, 100),
+            sessionType = obj.optString("sessionType", "POST_3PM").ifBlank { "POST_3PM" },
+            scheduledEndTime = obj.optString("scheduledEndTime", obj.optString("endTime", "05:00 PM")).ifBlank { "05:00 PM" },
+            assignedReason = obj.optString("assignedReason", obj.optString("reason", "Auto (<80%)")).ifBlank { "Auto (<80%)" },
+            status = obj.optString("status", "SCHEDULED").ifBlank { "SCHEDULED" },
+            checkInTime = obj.optString("checkInTime", "03:00 PM").ifBlank { "03:00 PM" },
+            checkOutCardScanTime = obj.optString("checkOutCardScanTime", obj.optString("Check_Out_Card_Scan_Time", "")).trim(),
+            durationMinutes = obj.optSafeInt("durationMinutes"),
+            verifiedByInstructor = obj.optBoolean("verifiedByInstructor", false),
+            isManualOverride = obj.optBoolean("isManualOverride", false)
+        )
+    }
+
+    private fun parseShopFloorList(array: JSONArray?): List<ShopFloorEntry> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val parsed = parseSingleShopFloorOrNull(array.optJSONObject(i)) ?: continue
+                add(parsed)
+            }
+        }
+    }
+
+    private fun parseScanOverrides(obj: JSONObject?): ScanOverrideState {
+        if (obj == null) return ScanOverrideState()
+        return ScanOverrideState(
+            earlyClassLogoutEnabled = obj.optBoolean("earlyClassLogoutEnabled", obj.optBoolean("earlyClassLogout", false)),
+            shopFloorReleaseNowEnabled = obj.optBoolean("shopFloorReleaseNowEnabled", obj.optBoolean("shopFloorReleaseNow", false)),
+            updatedAt = obj.optString("updatedAt", "").trim(),
+            updatedBy = obj.optString("updatedBy", "").trim()
+        )
+    }
+
+    private fun parseToolCribLogs(array: JSONArray?): List<ToolCribLogEntry> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                val name = item.optString("itemName", "").trim()
+                if (name.isBlank()) continue
+                add(
+                    ToolCribLogEntry(
+                        id = item.optSafeString("id", "TC-$i"),
+                        date = item.optString("date", todayIstDateString()),
+                        time = item.optString("time", ""),
+                        itemName = name,
+                        conditionStatus = item.optString("conditionStatus", "DAMAGED").ifBlank { "DAMAGED" },
+                        notes = item.optString("notes", "").trim(),
+                        reportedBy = item.optString("reportedBy", "Trade Instructor")
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseDutySignOff(obj: JSONObject?): DutySignOffRecord? {
+        if (obj == null) return null
+        val date = obj.optString("date", "").trim()
+        val pair = obj.optString("pairLabel", "").trim()
+        if (date.isBlank() && pair.isBlank()) return null
+        return DutySignOffRecord(
+            date = date.ifBlank { todayIstDateString() },
+            pairLabel = pair,
+            signedOff = obj.optBoolean("signedOff", false),
+            signedAt = obj.optString("signedAt", "").trim(),
+            note = obj.optString("note", "").trim()
         )
     }
 
@@ -555,6 +986,14 @@ class AttendanceApiClient {
         }
     }
 
+    private fun parseSingleNoticeOrNull(obj: JSONObject?): NoticeItem? {
+        if (obj == null) return null
+        val title = obj.optString("title", "").trim()
+        val body = obj.optString("body", obj.optString("message", "")).trim()
+        if (title.isBlank() && body.isBlank()) return null
+        return parseSingleNotice(obj)
+    }
+
     private fun parseSingleNotice(item: JSONObject): NoticeItem {
         return NoticeItem(
             id = item.optSafeString("id", item.optSafeString("noticeId", "NTC-${item.hashCode()}")),
@@ -562,7 +1001,8 @@ class AttendanceApiClient {
             date = item.optString("date", todayIstDateString()).ifBlank { todayIstDateString() },
             category = item.optString("category", item.optString("tag", "General")).ifBlank { "General" },
             body = item.optString("body", item.optString("message", "")).trim(),
-            postedBy = item.optString("postedBy", "Govt. ITI Ranni").ifBlank { "Govt. ITI Ranni" }
+            postedBy = item.optString("postedBy", "Govt. ITI Ranni").ifBlank { "Govt. ITI Ranni" },
+            isPinned = item.optBoolean("isPinned", item.optBoolean("pinned", false))
         )
     }
 

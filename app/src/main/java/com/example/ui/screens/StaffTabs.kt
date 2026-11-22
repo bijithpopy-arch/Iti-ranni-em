@@ -86,6 +86,7 @@ import com.example.viewmodel.AppUiState
 fun PendingApprovalsTab(
     uiState: AppUiState,
     onApproveAndSign: (reqId: String, signature: String) -> Unit,
+    onRejectLeave: (reqId: String, reason: String) -> Unit = { _, _ -> },
     onDismissApprovalFeedback: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -233,7 +234,8 @@ fun PendingApprovalsTab(
                     defaultSignerName = signerDefaultName,
                     isSigning = uiState.signingReqId == request.reqId,
                     anySigningInProgress = uiState.signingReqId != null,
-                    onApprove = { sig -> onApproveAndSign(request.reqId, sig) }
+                    onApprove = { sig -> onApproveAndSign(request.reqId, sig) },
+                    onReject = { reason -> onRejectLeave(request.reqId, reason) }
                 )
             }
         }
@@ -246,7 +248,8 @@ private fun PendingApprovalCard(
     defaultSignerName: String,
     isSigning: Boolean,
     anySigningInProgress: Boolean,
-    onApprove: (String) -> Unit
+    onApprove: (String) -> Unit,
+    onReject: (String) -> Unit
 ) {
     val colors = LocalItiColors.current
     var expandedSignPad by remember(request.reqId) { mutableStateOf(false) }
@@ -355,23 +358,46 @@ private fun PendingApprovalCard(
             }
 
             if (!expandedSignPad) {
-                OutlinedButton(
-                    onClick = { expandedSignPad = true },
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.65f)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.skyAccent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("open_sign_pad_${request.reqId}")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Draw,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Sign & Approve Request")
+                    OutlinedButton(
+                        onClick = { expandedSignPad = true },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.65f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.skyAccent),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("open_sign_pad_${request.reqId}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Draw,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Sign & Approve")
+                    }
+                    OutlinedButton(
+                        onClick = { onReject("Rejected by $defaultSignerName") },
+                        enabled = !anySigningInProgress,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, colors.redAccent.copy(alpha = 0.65f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.redAccent),
+                        modifier = Modifier
+                            .height(48.dp)
+                            .testTag("reject_request_${request.reqId}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Reject Request",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Reject")
+                    }
                 }
             } else {
                 DigitalSignaturePad(
@@ -431,6 +457,9 @@ fun AttendanceRegisterTab(
     onExportPdf: () -> Unit,
     onConfirmCloseAttendance: () -> Unit,
     onDismissCloseFeedback: () -> Unit,
+    onBulkMorningRollCall: () -> Unit,
+    onMarkException: (roll: String, exceptionType: String) -> Unit,
+    onSendInstantParentAlert: (roll: String, name: String, alertType: String, msg: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalItiColors.current
@@ -531,9 +560,75 @@ fun AttendanceRegisterTab(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (staffData?.pinnedBroadcast != null) {
+            item {
+                com.example.ui.components.PinnedPrincipalBroadcastBanner(notice = staffData.pinnedBroadcast)
+            }
+        }
+
         if (todayHoliday != null) {
             item {
                 ActiveHolidayBanner(holiday = todayHoliday)
+            }
+        }
+
+        // 1-Tap Bulk Morning Roll Call & Live Scanner Status Card
+        item {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("bulk_roll_call_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Morning Roll Call & Live Scanner",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "ESP8266 Sync: ${staffData?.lastScannerSyncTime?.ifBlank { "Online" } ?: "Online"} • Present: $presentCount • Absent: $absentCount",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                                color = colors.skyAccent
+                            )
+                        }
+                        Button(
+                            onClick = onBulkMorningRollCall,
+                            enabled = !uiState.isRunningRollCallOp && !attendanceClosed,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colors.skyAccent,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("bulk_morning_roll_call_button")
+                        ) {
+                            Text(
+                                text = if (uiState.isRunningRollCallOp) "Working..." else "1-Tap Bulk Present",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(visible = uiState.rollCallFeedbackMessage != null) {
+                        InlineAlertCard(message = uiState.rollCallFeedbackMessage.orEmpty(), isError = false)
+                    }
+                    AnimatedVisibility(visible = uiState.rollCallError != null) {
+                        InlineAlertCard(message = uiState.rollCallError.orEmpty(), isError = true)
+                    }
+                }
             }
         }
 
@@ -839,20 +934,35 @@ fun AttendanceRegisterTab(
             }
         } else {
             items(filteredRecords, key = { "${it.roll}_${it.name}" }) { record ->
-                AttendanceRegisterRowCard(record = record)
+                AttendanceRegisterRowCard(
+                    record = record,
+                    isBusy = uiState.isRunningRollCallOp,
+                    onMarkException = { exType -> onMarkException(record.roll, exType) },
+                    onSendInstantParentAlert = { alertType ->
+                        onSendInstantParentAlert(record.roll, record.name, alertType, "")
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AttendanceRegisterRowCard(record: StaffAttendanceRecord) {
+private fun AttendanceRegisterRowCard(
+    record: StaffAttendanceRecord,
+    isBusy: Boolean,
+    onMarkException: (String) -> Unit,
+    onSendInstantParentAlert: (String) -> Unit
+) {
     val colors = LocalItiColors.current
+    val clampedPct = record.pct.coerceIn(0, 100)
     val pctColor = when {
-        record.pct >= 80 -> colors.emeraldAccent
-        record.pct >= 75 -> colors.amberAccent
+        clampedPct >= 80 -> colors.emeraldAccent
+        clampedPct >= 75 -> colors.amberAccent
         else -> colors.redAccent
     }
+    val isAbsent = record.todayStatus.equals("ABSENT", ignoreCase = true) || record.todayStatus.isBlank()
+    val isLowAttendance = clampedPct < 80
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -914,7 +1024,7 @@ private fun AttendanceRegisterRowCard(record: StaffAttendanceRecord) {
                     border = BorderStroke(1.dp, pctColor.copy(alpha = 0.45f))
                 ) {
                     Text(
-                        text = "${record.pct}%",
+                        text = "${clampedPct}%",
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontFamily = JetBrainsMonoFamily,
                             fontWeight = FontWeight.Bold
@@ -945,6 +1055,54 @@ private fun AttendanceRegisterRowCard(record: StaffAttendanceRecord) {
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                         color = colors.amberAccent
                     )
+                }
+            }
+
+            // Quick Exceptions (Late / Half-Day / On-Duty) + Instant 1-Tap Parent Alert Trigger
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items(listOf("LATE", "HALF-DAY", "ON-DUTY")) { exType ->
+                    val isCurrent = record.todayStatus.equals(exType, ignoreCase = true)
+                    FilterChip(
+                        selected = isCurrent,
+                        enabled = !isBusy,
+                        onClick = { onMarkException(exType) },
+                        label = { Text(exType, style = MaterialTheme.typography.labelSmall) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = colors.amberContainer,
+                            selectedLabelColor = colors.amberAccent,
+                            containerColor = MaterialTheme.colorScheme.background,
+                            labelColor = colors.textMuted
+                        ),
+                        modifier = Modifier.testTag("quick_ex_${record.roll}_${exType.lowercase()}")
+                    )
+                }
+                if (isAbsent || isLowAttendance) {
+                    item {
+                        val alertType = if (isLowAttendance && !isAbsent) {
+                            com.example.data.ParentAlertTypes.LOW_ATTENDANCE_WARNING
+                        } else {
+                            com.example.data.ParentAlertTypes.ABSENCE_ALERT
+                        }
+                        val label = if (alertType == com.example.data.ParentAlertTypes.LOW_ATTENDANCE_WARNING) {
+                            "Alert Parent (<80%)"
+                        } else {
+                            "Alert Parent (Absent)"
+                        }
+                        FilterChip(
+                            selected = true,
+                            enabled = !isBusy,
+                            onClick = { onSendInstantParentAlert(alertType) },
+                            label = { Text(label, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = colors.redContainer,
+                                selectedLabelColor = colors.redAccent
+                            ),
+                            modifier = Modifier.testTag("instant_parent_alert_${record.roll}")
+                        )
+                    }
                 }
             }
         }

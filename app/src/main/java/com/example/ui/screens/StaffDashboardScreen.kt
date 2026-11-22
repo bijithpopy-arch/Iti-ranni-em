@@ -22,14 +22,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PendingActions
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Groups
-import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PendingActions
 import androidx.compose.material.icons.rounded.Refresh
@@ -61,7 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.StaffTab
-import com.example.data.UserRole
+import com.example.ui.components.CheckUpdateIconButton
 import com.example.ui.components.EspStatusBadge
 import com.example.ui.components.ExternalUrlHelper
 import com.example.ui.components.TricolourRibbon
@@ -75,13 +75,25 @@ fun StaffDashboardScreen(
     onTabSelected: (StaffTab) -> Unit,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
+    onCheckUpdate: () -> Unit,
     onApproveAndSign: (reqId: String, signature: String) -> Unit,
+    onRejectLeave: (reqId: String, reason: String) -> Unit,
     onDismissApprovalFeedback: () -> Unit,
     onRegisterSearchChanged: (String) -> Unit,
     onRegisterStatusFilterChanged: (String) -> Unit,
     onExportPdf: (onPdfReady: (String) -> Unit) -> Unit,
     onConfirmCloseAttendance: () -> Unit,
     onDismissCloseFeedback: () -> Unit,
+    onBulkMorningRollCall: () -> Unit,
+    onMarkException: (roll: String, exceptionType: String) -> Unit,
+    onSendInstantParentAlert: (roll: String, name: String, alertType: String, msg: String) -> Unit,
+    onToggleEarlyClassLogout: (Boolean) -> Unit,
+    onToggleShopFloorReleaseNow: (Boolean) -> Unit,
+    onUpdateShopFloorMember: (roll: String, operation: String, sessionType: String, endTime: String) -> Unit,
+    onRecordShopFloorCardLogout: (roll: String) -> Unit,
+    onVerifyShopFloorLogout: (roll: String, date: String) -> Unit,
+    onSignOffDuty: (date: String, pairLabel: String, note: String, onReset: () -> Unit) -> Unit,
+    onLogToolCrib: (itemName: String, conditionStatus: String, notes: String, onReset: () -> Unit) -> Unit,
     onPostNotice: (title: String, category: String, body: String, onReset: () -> Unit) -> Unit,
     onPostHoliday: (date: String, reason: String, onReset: () -> Unit) -> Unit,
     onToggleProjectGroupsAccess: (Boolean) -> Unit,
@@ -91,8 +103,8 @@ fun StaffDashboardScreen(
     modifier: Modifier = Modifier
 ) {
     BackHandler {
-        if (uiState.selectedStaffTab != StaffTab.PENDING_APPROVALS) {
-            onTabSelected(StaffTab.PENDING_APPROVALS)
+        if (uiState.selectedStaffTab != StaffTab.ATTENDANCE_REGISTER) {
+            onTabSelected(StaffTab.ATTENDANCE_REGISTER)
         } else {
             onLogout()
         }
@@ -102,10 +114,11 @@ fun StaffDashboardScreen(
     val context = LocalContext.current
     val pendingCount = uiState.staffData?.pendingLeaves?.size ?: 0
     val parentAlertsCount = uiState.staffData?.parentAlerts?.size ?: 0
+    val shopFloorCount = uiState.staffData?.shopFloorList?.size ?: 0
     val allAttendance = uiState.staffData?.allAttendance.orEmpty()
     val presentTodayCount = allAttendance.count {
         val status = it.todayStatus.uppercase()
-        status == "PRESENT" || status.contains("HALF") || status.contains("OUT-PASS")
+        status == "PRESENT" || status.contains("HALF") || status.contains("OUT-PASS") || status == "LATE" || status == "ON-DUTY"
     }
     val attendanceClosed = uiState.staffData?.attendanceClosed ?: false
 
@@ -121,12 +134,14 @@ fun StaffDashboardScreen(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 StaffHeaderBar(
-                    role = uiState.activeStaffRole,
                     presentToday = presentTodayCount,
                     totalTrainees = allAttendance.size,
-                    pendingApprovals = pendingCount,
+                    shopFloorCount = shopFloorCount,
                     attendanceClosed = attendanceClosed,
                     isRefreshing = uiState.isRefreshingStaff,
+                    isCheckingUpdate = uiState.isCheckingUpdate,
+                    hasUpdate = uiState.availableUpdate != null,
+                    onCheckUpdate = onCheckUpdate,
                     onRefresh = onRefresh,
                     onLogout = onLogout
                 )
@@ -148,7 +163,8 @@ fun StaffDashboardScreen(
                                         tab = tab,
                                         selected = selected,
                                         pendingCount = pendingCount,
-                                        alertsCount = parentAlertsCount
+                                        alertsCount = parentAlertsCount,
+                                        shopFloorCount = shopFloorCount
                                     )
                                 },
                                 label = {
@@ -195,14 +211,12 @@ fun StaffDashboardScreen(
                                         tab = tab,
                                         selected = selected,
                                         pendingCount = pendingCount,
-                                        alertsCount = parentAlertsCount
+                                        alertsCount = parentAlertsCount,
+                                        shopFloorCount = shopFloorCount
                                     )
                                 },
                                 label = {
-                                    Text(
-                                        text = tab.label,
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
+                                    Text(text = tab.label, style = MaterialTheme.typography.labelSmall)
                                 },
                                 colors = NavigationRailItemDefaults.colors(
                                     selectedIconColor = colors.skyAccent,
@@ -229,23 +243,34 @@ fun StaffDashboardScreen(
                     }
 
                     when (uiState.selectedStaffTab) {
-                        StaffTab.PENDING_APPROVALS -> PendingApprovalsTab(
-                            uiState = uiState,
-                            onApproveAndSign = onApproveAndSign,
-                            onDismissApprovalFeedback = onDismissApprovalFeedback
-                        )
-
                         StaffTab.ATTENDANCE_REGISTER -> AttendanceRegisterTab(
                             uiState = uiState,
                             onSearchChanged = onRegisterSearchChanged,
                             onStatusFilterChanged = onRegisterStatusFilterChanged,
                             onExportPdf = {
-                                onExportPdf { url ->
-                                    ExternalUrlHelper.openUrl(context, url)
-                                }
+                                onExportPdf { url -> ExternalUrlHelper.openUrl(context, url) }
                             },
                             onConfirmCloseAttendance = onConfirmCloseAttendance,
-                            onDismissCloseFeedback = onDismissCloseFeedback
+                            onDismissCloseFeedback = onDismissCloseFeedback,
+                            onBulkMorningRollCall = onBulkMorningRollCall,
+                            onMarkException = onMarkException,
+                            onSendInstantParentAlert = onSendInstantParentAlert
+                        )
+
+                        StaffTab.SHOP_FLOOR -> ShopFloorControlTab(
+                            uiState = uiState,
+                            onToggleEarlyClassLogout = onToggleEarlyClassLogout,
+                            onToggleShopFloorReleaseNow = onToggleShopFloorReleaseNow,
+                            onAddOrRemoveShopFloor = onUpdateShopFloorMember,
+                            onRecordCardLogout = onRecordShopFloorCardLogout,
+                            onVerifyLogout = onVerifyShopFloorLogout
+                        )
+
+                        StaffTab.PENDING_APPROVALS -> PendingApprovalsTab(
+                            uiState = uiState,
+                            onApproveAndSign = onApproveAndSign,
+                            onRejectLeave = onRejectLeave,
+                            onDismissApprovalFeedback = onDismissApprovalFeedback
                         )
 
                         StaffTab.PARENT_ALERTS -> ParentAlertsTab(uiState = uiState)
@@ -255,12 +280,10 @@ fun StaffDashboardScreen(
                             onPostNotice = onPostNotice,
                             onPostHoliday = onPostHoliday,
                             onToggleProjectGroupsAccess = onToggleProjectGroupsAccess,
-                            onRefreshProjectGroups = onRefreshProjectGroups
-                        )
-
-                        StaffTab.ESP_TERMINAL -> EspTerminalTab(
-                            uiState = uiState,
-                            onRollChanged = onEspRollChanged,
+                            onRefreshProjectGroups = onRefreshProjectGroups,
+                            onSignOffDuty = onSignOffDuty,
+                            onLogToolCrib = onLogToolCrib,
+                            onEspRollChanged = onEspRollChanged,
                             onTriggerManualTap = onTriggerManualTap
                         )
                     }
@@ -272,21 +295,18 @@ fun StaffDashboardScreen(
 
 @Composable
 private fun StaffHeaderBar(
-    role: UserRole,
     presentToday: Int,
     totalTrainees: Int,
-    pendingApprovals: Int,
+    shopFloorCount: Int,
     attendanceClosed: Boolean,
     isRefreshing: Boolean,
+    isCheckingUpdate: Boolean,
+    hasUpdate: Boolean,
+    onCheckUpdate: () -> Unit,
     onRefresh: () -> Unit,
     onLogout: () -> Unit
 ) {
     val colors = LocalItiColors.current
-    val roleTitle = if (role == UserRole.PRINCIPAL) {
-        "Principal Dashboard"
-    } else {
-        "Trade Instructor Portal"
-    }
 
     Column(
         modifier = Modifier
@@ -304,7 +324,7 @@ private fun StaffHeaderBar(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = roleTitle,
+                    text = "Trade Instructor Workshop",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -314,7 +334,12 @@ private fun StaffHeaderBar(
                 EspStatusBadge(label = stringResource(R.string.esp_badge_live))
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                CheckUpdateIconButton(
+                    isChecking = isCheckingUpdate,
+                    hasUpdate = hasUpdate,
+                    onClick = onCheckUpdate
+                )
                 IconButton(
                     onClick = onRefresh,
                     enabled = !isRefreshing,
@@ -359,9 +384,9 @@ private fun StaffHeaderBar(
                 modifier = Modifier.weight(1f)
             )
             KpiMiniBadge(
-                label = "Pending",
-                value = pendingApprovals.toString(),
-                accent = if (pendingApprovals > 0) colors.amberAccent else colors.textMuted,
+                label = "ShopFlr",
+                value = shopFloorCount.toString(),
+                accent = if (shopFloorCount > 0) colors.amberAccent else colors.emeraldAccent,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -427,20 +452,22 @@ private fun StaffTabIcon(
     tab: StaffTab,
     selected: Boolean,
     pendingCount: Int,
-    alertsCount: Int
+    alertsCount: Int,
+    shopFloorCount: Int
 ) {
     val colors = LocalItiColors.current
     val icon: ImageVector = when (tab) {
-        StaffTab.PENDING_APPROVALS -> if (selected) Icons.Rounded.PendingActions else Icons.Outlined.PendingActions
         StaffTab.ATTENDANCE_REGISTER -> if (selected) Icons.Rounded.Groups else Icons.Outlined.Groups
+        StaffTab.SHOP_FLOOR -> if (selected) Icons.Rounded.Build else Icons.Outlined.Build
+        StaffTab.PENDING_APPROVALS -> if (selected) Icons.Rounded.PendingActions else Icons.Outlined.PendingActions
         StaffTab.PARENT_ALERTS -> if (selected) Icons.Rounded.NotificationsActive else Icons.Outlined.NotificationsActive
         StaffTab.CAMPUS_HUB -> if (selected) Icons.Rounded.Campaign else Icons.Outlined.Campaign
-        StaffTab.ESP_TERMINAL -> if (selected) Icons.Rounded.Memory else Icons.Outlined.Memory
     }
 
     val badgeCount = when (tab) {
         StaffTab.PENDING_APPROVALS -> pendingCount
         StaffTab.PARENT_ALERTS -> alertsCount
+        StaffTab.SHOP_FLOOR -> shopFloorCount
         else -> 0
     }
 

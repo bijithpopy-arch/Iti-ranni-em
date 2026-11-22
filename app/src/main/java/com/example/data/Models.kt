@@ -14,17 +14,32 @@ enum class TraineeTab(val label: String) {
     PROJECT_GROUPS("Projects")
 }
 
+/**
+ * Trade Instructor workspace tabs (Daily Workshop & Operations)
+ */
 enum class StaffTab(val label: String) {
-    PENDING_APPROVALS("Approvals"),
     ATTENDANCE_REGISTER("Register"),
+    SHOP_FLOOR("Shop Floor"),
+    PENDING_APPROVALS("Approvals"),
     PARENT_ALERTS("Alerts"),
-    CAMPUS_HUB("Campus"),
-    ESP_TERMINAL("ESP")
+    CAMPUS_HUB("Ops & Hub")
+}
+
+/**
+ * Principal executive oversight tabs (Read-only Scorecard, Audit, Approvals, Broadcasts)
+ */
+enum class PrincipalTab(val label: String) {
+    SCORECARD("Scorecard"),
+    SHOP_FLOOR_AUDIT("Audit Log"),
+    LEAVE_APPROVALS("Approvals"),
+    BROADCASTS("Broadcasts")
 }
 
 object ParentAlertTypes {
     const val BUNK_ALERT = "BUNK_ALERT"
     const val LEAVE_REASON = "LEAVE_REASON"
+    const val LOW_ATTENDANCE_WARNING = "LOW_ATTENDANCE_WARNING"
+    const val ABSENCE_ALERT = "ABSENCE_ALERT"
 }
 
 data class AttendanceSummary(
@@ -34,7 +49,8 @@ data class AttendanceSummary(
     val present: Int,
     val half: Int,
     val total: Int,
-    val pct: Int
+    val pct: Int,
+    val streakDays: Int = 0
 )
 
 data class TraineeLeaveItem(
@@ -59,7 +75,8 @@ data class NoticeItem(
     val date: String,
     val category: String,
     val body: String,
-    val postedBy: String = "Govt. ITI Ranni"
+    val postedBy: String = "Govt. ITI Ranni",
+    val isPinned: Boolean = false
 )
 
 data class ProjectGroup(
@@ -76,8 +93,58 @@ data class DutyPairSlot(
     val dayNumber: Int,
     val rolls: List<Int>,
     val dateLabel: String,
+    val dateKey: String = "",
     val isToday: Boolean,
     val dutyItems: List<String>
+)
+
+/**
+ * Shop Floor makeup session record (auto-flagged <80% or manually assigned by Instructor)
+ * for Saturday or post-3:00 PM sessions with RFID ID-card logout tracking.
+ */
+data class ShopFloorEntry(
+    val id: String = "",
+    val date: String = "",
+    val roll: String,
+    val name: String,
+    val attendancePct: Int,
+    val sessionType: String = "POST_3PM", // "POST_3PM" or "SATURDAY"
+    val scheduledEndTime: String = "05:00 PM", // "04:00 PM" or "05:00 PM"
+    val assignedReason: String = "Auto (<80%)",
+    val status: String = "SCHEDULED", // "SCHEDULED", "IN_SESSION", "COMPLETED"
+    val checkInTime: String = "03:00 PM",
+    val checkOutCardScanTime: String = "",
+    val durationMinutes: Int = 0,
+    val verifiedByInstructor: Boolean = false,
+    val isManualOverride: Boolean = false
+)
+
+/**
+ * Instructor-triggered real-time RFID/ID-card scan overrides stored in Google Sheets / ScriptProperties.
+ */
+data class ScanOverrideState(
+    val earlyClassLogoutEnabled: Boolean = false,
+    val shopFloorReleaseNowEnabled: Boolean = false,
+    val updatedAt: String = "",
+    val updatedBy: String = ""
+)
+
+data class ToolCribLogEntry(
+    val id: String,
+    val date: String,
+    val time: String,
+    val itemName: String,
+    val conditionStatus: String, // "MISSING", "DAMAGED", "OK / RETURNED"
+    val notes: String,
+    val reportedBy: String = "Trade Instructor"
+)
+
+data class DutySignOffRecord(
+    val date: String,
+    val pairLabel: String,
+    val signedOff: Boolean,
+    val signedAt: String = "",
+    val note: String = ""
 )
 
 data class TraineeDashboardData(
@@ -91,6 +158,9 @@ data class TraineeDashboardData(
     val todayHoliday: HolidayAnnouncement? = null,
     val holidays: List<HolidayAnnouncement> = emptyList(),
     val notices: List<NoticeItem> = emptyList(),
+    val pinnedBroadcast: NoticeItem? = null,
+    val myShopFloorEntry: ShopFloorEntry? = null,
+    val scanOverrides: ScanOverrideState = ScanOverrideState(),
     val projectGroupsEnabled: Boolean = false,
     val projectGroups: List<ProjectGroup> = emptyList(),
     val dutyItems: List<String> = emptyList()
@@ -116,6 +186,8 @@ data class ParentDashboardData(
     val todayHoliday: HolidayAnnouncement? = null,
     val holidays: List<HolidayAnnouncement> = emptyList(),
     val notices: List<NoticeItem> = emptyList(),
+    val pinnedBroadcast: NoticeItem? = null,
+    val wardShopFloorEntry: ShopFloorEntry? = null,
     val parentAlerts: List<ParentAlertItem>
 )
 
@@ -190,6 +262,12 @@ data class StaffDashboardData(
     val todayHoliday: HolidayAnnouncement? = null,
     val holidays: List<HolidayAnnouncement> = emptyList(),
     val notices: List<NoticeItem> = emptyList(),
+    val pinnedBroadcast: NoticeItem? = null,
+    val shopFloorList: List<ShopFloorEntry> = emptyList(),
+    val scanOverrides: ScanOverrideState = ScanOverrideState(),
+    val toolCribLogs: List<ToolCribLogEntry> = emptyList(),
+    val todayDutySignOff: DutySignOffRecord? = null,
+    val lastScannerSyncTime: String = "",
     val projectGroupsEnabled: Boolean = false,
     val projectGroups: List<ProjectGroup> = emptyList()
 )
@@ -215,6 +293,25 @@ data class EspTapResult(
     val mode: String,
     val name: String,
     val time: String,
+    val message: String
+)
+
+data class SimpleActionResult(
+    val message: String
+)
+
+data class ScanOverrideResult(
+    val state: ScanOverrideState,
+    val message: String
+)
+
+data class ToolCribLogResult(
+    val entry: ToolCribLogEntry,
+    val message: String
+)
+
+data class DutySignOffResult(
+    val record: DutySignOffRecord,
     val message: String
 )
 

@@ -113,10 +113,12 @@ import com.example.notifications.AttendanceNotificationHelper
 import com.example.ui.components.ActiveHolidayBanner
 import com.example.ui.components.AttendanceFinalizationBanner
 import com.example.ui.components.AttendanceStatusPill
+import com.example.ui.components.CheckUpdateIconButton
 import com.example.ui.components.DigitalSignaturePad
 import com.example.ui.components.EspStatusBadge
 import com.example.ui.components.ExternalUrlHelper
 import com.example.ui.components.LeaveStatusBadge
+import com.example.ui.components.PinnedPrincipalBroadcastBanner
 import com.example.ui.components.TricolourRibbon
 import com.example.ui.theme.JetBrainsMonoFamily
 import com.example.ui.theme.LocalItiColors
@@ -144,6 +146,7 @@ fun TraineeDashboardScreen(
     onSaveProjectGroup: (title: String, members: List<Int>, leaderRoll: Int?, leaderName: String, onReset: () -> Unit) -> Unit,
     onRefreshProjectGroups: () -> Unit,
     onDismissProjectFeedback: () -> Unit,
+    onCheckUpdate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BackHandler {
@@ -244,7 +247,12 @@ fun TraineeDashboardScreen(
                             )
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            CheckUpdateIconButton(
+                                isChecking = uiState.isCheckingUpdate,
+                                hasUpdate = uiState.availableUpdate != null,
+                                onClick = onCheckUpdate
+                            )
                             IconButton(
                                 onClick = onRefresh,
                                 enabled = !uiState.isRefreshingTrainee,
@@ -390,6 +398,13 @@ fun TraineeDashboardScreen(
                                 }
 
                                 if (data != null) {
+                                    // Pinned Principal Broadcast Notice (Top of Dashboard)
+                                    if (data.pinnedBroadcast != null) {
+                                        item {
+                                            PinnedPrincipalBroadcastBanner(notice = data.pinnedBroadcast)
+                                        }
+                                    }
+
                                     // Active Holiday Banner
                                     if (data.todayHoliday != null) {
                                         item {
@@ -414,9 +429,25 @@ fun TraineeDashboardScreen(
                                         )
                                     }
 
-                                    // 2. Attendance Percentage Ring & Breakdown Card
+                                    // 2. Attendance Percentage Ring & Breakdown Card (0..100% clamped)
                                     item {
                                         AttendancePercentageCard(attendance = data.attendance)
+                                    }
+
+                                    // 2b. Personal 80% Safe-Zone Calculator & Streak Badge
+                                    item {
+                                        TraineeSafeZoneAndStreakCard(attendance = data.attendance)
+                                    }
+
+                                    // 2c. My Mon–Fri Duty Turn & Live Shop Floor Status Badge
+                                    item {
+                                        TraineeDutyAndShopFloorCard(
+                                            myRollNumber = (data.roll).toIntOrNull(),
+                                            customDutyItems = data.dutyItems,
+                                            myShopFloorEntry = data.myShopFloorEntry,
+                                            scanOverrides = data.scanOverrides,
+                                            onOpenDutyTab = { onTabSelected(TraineeTab.DUTY_CHART) }
+                                        )
                                     }
 
                                     // 3. Apply for Out-Pass / Half-Day Leave Card
@@ -1005,7 +1036,7 @@ private fun AttendancePercentageCard(attendance: AttendanceSummary) {
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "${attendance.pct}%",
+                            text = "${pctClamped}%",
                             style = MaterialTheme.typography.headlineMedium.copy(
                                 fontFamily = JetBrainsMonoFamily,
                                 fontWeight = FontWeight.Bold

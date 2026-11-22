@@ -83,10 +83,11 @@ fun DutyChartTab(
         )
     }
     val todaySlot = schedule.firstOrNull()
+    val isWeekend = remember { DutyRotationEngine.isWeekendToday() }
     val daysUntilMyTurn = remember(myRollNumber, schedule) {
-        myRollNumber?.let { DutyRotationEngine.daysUntilRollTurn(it, schedule) }
+        myRollNumber?.let { DutyRotationEngine.workingDaysUntilRollTurn(it, schedule) }
     }
-    val amOnDutyToday = myRollNumber != null && todaySlot?.rolls?.contains(myRollNumber) == true
+    val amOnDutyToday = !isWeekend && myRollNumber != null && todaySlot?.rolls?.contains(myRollNumber) == true
 
     LazyColumn(
         modifier = modifier
@@ -138,7 +139,7 @@ fun DutyChartTab(
                                 }
                                 Column {
                                     Text(
-                                        text = "Today's On-Duty Pair",
+                                        text = if (isWeekend) "Next Mon–Fri On-Duty Pair" else "Today's On-Duty Pair",
                                         style = MaterialTheme.typography.titleMedium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -252,7 +253,7 @@ fun DutyChartTab(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        text = "Your next turn (Roll #$myRollNumber) is in $daysUntilMyTurn day(s).",
+                                        text = "Your next Mon–Fri turn (Roll #$myRollNumber) is in $daysUntilMyTurn working day(s).",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -273,12 +274,12 @@ fun DutyChartTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Full Daily Pair Rotation Chart",
+                    text = "Mon–Fri Infinite Duty Rotation",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Rolls 1–${DutyRotationEngine.DEFAULT_TOTAL_ROLLS}",
+                    text = "Sat/Sun Skipped • 1–${DutyRotationEngine.DEFAULT_TOTAL_ROLLS}",
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                     color = colors.textMuted
                 )

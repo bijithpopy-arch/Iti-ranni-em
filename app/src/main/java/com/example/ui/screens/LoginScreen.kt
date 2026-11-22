@@ -38,10 +38,12 @@ import androidx.compose.material.icons.rounded.Badge
 import androidx.compose.material.icons.rounded.Engineering
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FamilyRestroom
+import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -126,9 +128,15 @@ private val OFFICIAL_PORTALS = listOf(
 @Composable
 fun LoginScreen(
     uiState: AppUiState,
+    biometricAvailable: Boolean,
     onRoleSelected: (UserRole) -> Unit,
     onRollChanged: (String) -> Unit,
     onPinChanged: (String) -> Unit,
+    onRememberMeChanged: (Boolean) -> Unit,
+    onBiometricEnabledChanged: (Boolean) -> Unit,
+    onFingerprintUnlockClick: () -> Unit,
+    onClearSavedLogin: () -> Unit,
+    onCheckUpdateClick: () -> Unit,
     onLoginClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -207,11 +215,11 @@ fun LoginScreen(
                 ) {
                     Column(
                         modifier = Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "Attendance, Notices & Out-Pass Portal",
+                                text = "Attendance, Shop Floor & Out-Pass Portal",
                                 style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -220,6 +228,52 @@ fun LoginScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colors.textMuted
                             )
+                        }
+
+                        // Quick Fingerprint Unlock Card if saved credentials & biometrics are enabled
+                        AnimatedVisibility(visible = uiState.hasSavedCredentials && uiState.biometricEnabled && biometricAvailable) {
+                            Surface(
+                                onClick = onFingerprintUnlockClick,
+                                shape = RoundedCornerShape(14.dp),
+                                color = colors.emeraldContainer,
+                                border = BorderStroke(1.5.dp, colors.emeraldAccent.copy(alpha = 0.65f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("biometric_quick_unlock_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .background(colors.emeraldAccent.copy(alpha = 0.2f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = androidx.compose.material.icons.Icons.Rounded.Fingerprint,
+                                            contentDescription = "Unlock with Fingerprint",
+                                            tint = colors.emeraldAccent,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = stringResource(R.string.label_fingerprint_unlock),
+                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = colors.emeraldAccent
+                                        )
+                                        Text(
+                                            text = "Saved: ${uiState.savedRoleLabel.ifBlank { uiState.selectedRole.displayName }} • Tap to verify",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         // 4-Role Grid Selector (Trainee, Parent, Trade Instructor, Principal)
@@ -333,6 +387,103 @@ fun LoginScreen(
                                 .testTag("login_pin_input")
                         )
 
+                        // Remember Me + Fingerprint Unlock Preferences
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.background,
+                            border = BorderStroke(1.dp, colors.borderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        androidx.compose.material3.Checkbox(
+                                            checked = uiState.rememberMe,
+                                            onCheckedChange = onRememberMeChanged,
+                                            colors = androidx.compose.material3.CheckboxDefaults.colors(
+                                                checkedColor = colors.skyAccent,
+                                                checkmarkColor = MaterialTheme.colorScheme.onPrimary
+                                            ),
+                                            modifier = Modifier.testTag("remember_me_checkbox")
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.label_remember_me),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    if (uiState.hasSavedCredentials) {
+                                        androidx.compose.material3.TextButton(
+                                            onClick = onClearSavedLogin,
+                                            modifier = Modifier.testTag("clear_saved_login_button")
+                                        ) {
+                                            Text(
+                                                text = "Forget",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = colors.redAccent
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (biometricAvailable) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 10.dp, end = 6.dp, bottom = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(
+                                                imageVector = androidx.compose.material.icons.Icons.Rounded.Fingerprint,
+                                                contentDescription = null,
+                                                tint = if (uiState.biometricEnabled) colors.emeraldAccent else colors.textMuted,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Text(
+                                                text = "Enable Fingerprint Unlock on app open",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.textMuted
+                                            )
+                                        }
+                                        androidx.compose.material3.Switch(
+                                            checked = uiState.biometricEnabled,
+                                            onCheckedChange = onBiometricEnabledChanged,
+                                            colors = androidx.compose.material3.SwitchDefaults.colors(
+                                                checkedThumbColor = MaterialTheme.colorScheme.onSecondary,
+                                                checkedTrackColor = colors.emeraldAccent
+                                            ),
+                                            modifier = Modifier.testTag("fingerprint_unlock_switch")
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        AnimatedVisibility(visible = uiState.biometricMessage != null) {
+                            Text(
+                                text = uiState.biometricMessage.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.amberAccent,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
+                        }
+
                         AnimatedVisibility(
                             visible = uiState.loginError != null,
                             enter = expandVertically() + fadeIn(),
@@ -404,6 +555,56 @@ fun LoginScreen(
                                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                                 )
                             }
+                        }
+                    }
+                }
+
+                // In-App Updater Pill (GitHub Releases)
+                Surface(
+                    onClick = onCheckUpdateClick,
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.cardSurface,
+                    border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.45f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("login_check_update_button")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Rounded.SystemUpdate,
+                                contentDescription = null,
+                                tint = colors.skyAccent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.action_check_update),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Installed v${com.example.BuildConfig.VERSION_NAME} • GitHub Releases Self-Updater",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                                    color = colors.textMuted
+                                )
+                            }
+                        }
+                        if (uiState.isCheckingUpdate) {
+                            CircularProgressIndicator(
+                                color = colors.skyAccent,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
                 }

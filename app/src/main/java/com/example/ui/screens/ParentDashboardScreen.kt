@@ -84,6 +84,8 @@ import com.example.notifications.AttendanceNotificationHelper
 import com.example.ui.components.ActiveHolidayBanner
 import com.example.ui.components.AttendanceFinalizationBanner
 import com.example.ui.components.AttendanceStatusPill
+import com.example.ui.components.CheckUpdateIconButton
+import com.example.ui.components.PinnedPrincipalBroadcastBanner
 import com.example.ui.components.TricolourRibbon
 import com.example.ui.theme.JetBrainsMonoFamily
 import com.example.ui.theme.LocalItiColors
@@ -106,6 +108,7 @@ fun ParentDashboardScreen(
     onSubmitBunkAlert: (optionalNote: String, onSuccessReset: () -> Unit) -> Unit,
     onSubmitLeaveReason: (reasonText: String, onSuccessReset: () -> Unit) -> Unit,
     onDismissFeedback: () -> Unit,
+    onCheckUpdate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BackHandler { onLogout() }
@@ -233,7 +236,12 @@ fun ParentDashboardScreen(
                         )
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        CheckUpdateIconButton(
+                            isChecking = uiState.isCheckingUpdate,
+                            hasUpdate = uiState.availableUpdate != null,
+                            onClick = onCheckUpdate
+                        )
                         IconButton(
                             onClick = onRefresh,
                             enabled = !uiState.isRefreshingParent,
@@ -328,6 +336,13 @@ fun ParentDashboardScreen(
             }
 
             if (data != null) {
+                // 0. Pinned Principal Broadcast Notice
+                if (data.pinnedBroadcast != null) {
+                    item {
+                        PinnedPrincipalBroadcastBanner(notice = data.pinnedBroadcast)
+                    }
+                }
+
                 // 1. Active Holiday Banner (prevents false ABSENT alerts)
                 if (data.todayHoliday != null) {
                     item {
@@ -839,7 +854,7 @@ private fun ParentAttendanceRingCard(
                     )
                 }
                 Text(
-                    text = "$pct%",
+                    text = "$clamped%",
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontFamily = JetBrainsMonoFamily,
                         fontWeight = FontWeight.Bold

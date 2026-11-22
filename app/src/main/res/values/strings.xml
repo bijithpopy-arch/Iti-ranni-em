@@ -28,4 +28,9 @@
     <string name="cd_circuit_banner">Electronics circuit background</string>
     <string name="cd_open_external">Open in browser</string>
     <string name="cd_toggle_pin">Toggle PIN visibility</string>
+    <string name="label_remember_me">Remember login on this device</string>
+    <string name="label_fingerprint_unlock">Unlock with Fingerprint</string>
+    <string name="action_check_update">Check for App Update</string>
+    <string name="override_early_class_title">Allow Early Class Logout Now</string>
+    <string name="override_shop_floor_release_title">Release Shop Floor Now</string>
 </resources>

@@ -66,9 +66,11 @@ private val PARENT_ALERT_FILTERS = listOf("ALL", ParentAlertTypes.BUNK_ALERT, Pa
 private val NOTICE_CATEGORIES = listOf("General", "Exam", "Workshop", "Urgent", "DGT / NCVT", "Holiday")
 
 private enum class CampusSubSection(val label: String) {
+    DUTY_TOOLS("Duty/Tools"),
     NOTICES("Notices"),
     HOLIDAYS("Holidays"),
-    PROJECTS("Projects")
+    PROJECTS("Projects"),
+    ESP("ESP")
 }
 
 @Composable
@@ -182,10 +184,14 @@ fun CampusManagementTab(
     onPostHoliday: (date: String, reason: String, onReset: () -> Unit) -> Unit,
     onToggleProjectGroupsAccess: (Boolean) -> Unit,
     onRefreshProjectGroups: () -> Unit,
+    onSignOffDuty: (date: String, pairLabel: String, note: String, onReset: () -> Unit) -> Unit,
+    onLogToolCrib: (itemName: String, conditionStatus: String, notes: String, onReset: () -> Unit) -> Unit,
+    onEspRollChanged: (String) -> Unit,
+    onTriggerManualTap: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalItiColors.current
-    var activeSection by remember { mutableStateOf(CampusSubSection.NOTICES) }
+    var activeSection by remember { mutableStateOf(CampusSubSection.DUTY_TOOLS) }
 
     // Notice form state
     var noticeTitle by remember { mutableStateOf("") }
@@ -246,6 +252,28 @@ fun CampusManagementTab(
         }
 
         when (activeSection) {
+            CampusSubSection.DUTY_TOOLS -> {
+                item {
+                    DutyAndToolCribPanel(
+                        uiState = uiState,
+                        onSignOffDuty = onSignOffDuty,
+                        onLogToolCrib = onLogToolCrib
+                    )
+                }
+            }
+
+            CampusSubSection.ESP -> {
+                item {
+                    Box(modifier = Modifier.height(520.dp)) {
+                        EspTerminalTab(
+                            uiState = uiState,
+                            onRollChanged = onEspRollChanged,
+                            onTriggerManualTap = onTriggerManualTap
+                        )
+                    }
+                }
+            }
+
             CampusSubSection.NOTICES -> {
                 item {
                     Surface(
