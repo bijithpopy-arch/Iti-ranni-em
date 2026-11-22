@@ -94,7 +94,6 @@ fun ItiAttendanceApp(
         }
     }
 
-    // Load Remember-Me session & trigger Fingerprint Unlock on app open + silent GitHub Releases update check
     LaunchedEffect(Unit) {
         val shouldAutoPromptBiometric = viewModel.loadSavedSessionIfNeeded(context)
         if (shouldAutoPromptBiometric && biometricAvailable) {
@@ -202,7 +201,6 @@ fun ItiAttendanceApp(
             }
         }
 
-        // Global In-App Self-Updater Dialog
         AppUpdateDialog(
             uiState = uiState,
             onDownloadAndInstall = { viewModel.startApkUpdateDownload(context) },
