@@ -32,6 +32,17 @@ jobs:
             gradle wrapper --no-daemon
           fi
           chmod +x ./gradlew
+          if [ ! -f "./debug.keystore" ]; then
+            keytool -genkeypair \
+              -keystore debug.keystore \
+              -storepass android \
+              -keypass android \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
           ./gradlew assembleDebug --no-daemon
 
       - name: Generate version.json manifest for in-app updater
