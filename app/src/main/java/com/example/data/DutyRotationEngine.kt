@@ -19,8 +19,6 @@ data class DutyScheduleDay(
     val label: String
 )
 
-typealias DutyPairSlot = DutyScheduleDay
-
 object DutyRotationEngine {
 
     const val DEFAULT_TOTAL_ROLLS = 23
