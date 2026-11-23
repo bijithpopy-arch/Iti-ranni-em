@@ -476,6 +476,11 @@ fun AttendanceRegisterTab(
     val todayHoliday = staffData?.todayHoliday
 
     var showCloseConfirmDialog by remember { mutableStateOf(false) }
+    
+    val punchedTodayRolls = remember { mutableStateListOf<String>() }
+val historyStack = remember { mutableStateListOf<PunchHistoryItem>() }
+val todayDate = staffData?.attendanceDate?.takeIf { it.isNotBlank() } ?: java.time.LocalDate.now().toString()
+
 
     val absentCount = remember(allRecords) {
         allRecords.count { it.todayStatus.uppercase().let { s -> s == "ABSENT" || s.isBlank() } }
@@ -965,6 +970,34 @@ fun AttendanceRegisterTab(
 
 @Composable
 private fun AttendanceRegisterRowCard(
+            val sfMember = staffData?.shopFloorList?.firstOrNull { it.roll == record.roll }
+        Spacer(modifier = Modifier.height(6.dp))
+        InstructorTraineeRegisterRow(
+            roll = record.roll,
+            name = record.name,
+            date = todayDate,
+            currentStatus = record.todayStatus,
+            present = record.present,
+            half = record.half,
+            total = record.total,
+            pct = record.pct,
+            shopFloorStatus = sfMember?.status ?: "Not Logged",
+            shopFloorHours = sfMember?.hours ?: 0.0,
+            alreadyPunchedToday = punchedTodayRolls.contains(record.roll),
+            canUndo = historyStack.lastOrNull()?.roll == record.roll,
+            onApplyPunch = { targetRoll, status, allowByMistake ->
+                if (!allowByMistake && punchedTodayRolls.contains(targetRoll)) return@InstructorTraineeRegisterRow
+                historyStack.add(PunchHistoryItem(targetRoll, record.name, todayDate, record.todayStatus, status))
+                if (!punchedTodayRolls.contains(targetRoll)) punchedTodayRolls.add(targetRoll)
+                onMarkException(targetRoll, status)
+            },
+            onUndoLast = {
+                val last = historyStack.removeLastOrNull() ?: return@InstructorTraineeRegisterRow
+                punchedTodayRolls.remove(last.roll)
+                onMarkException(last.roll, last.previousStatus)
+            }
+        )
+        
     record: StaffAttendanceRecord,
     isBusy: Boolean,
     onMarkException: (String) -> Unit,
