@@ -36,7 +36,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.EventRepeat
@@ -109,6 +111,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.AttendanceSummary
+import com.example.data.IstDateTimeFormatter
 import com.example.data.TraineeLeaveItem
 import com.example.data.TraineeTab
 import com.example.notifications.AttendanceNotificationHelper
@@ -163,6 +166,17 @@ fun TraineeDashboardScreen(
         onSuccessReset: () -> Unit
     ) -> Unit = { _, _, _, _ -> },
     onDismissRunningLateFeedback: () -> Unit = {},
+    onSubmitAcademicRecord: (
+        theoryTopic: String,
+        theoryStatus: String,
+        theoryUpdatedDate: String,
+        labJobName: String,
+        labStatus: String,
+        labSignedDate: String,
+        remarks: String
+    ) -> Unit = { _, _, _, _, _, _, _ -> },
+    onRefreshAcademicSubmission: () -> Unit = {},
+    onDismissAcademicFeedback: () -> Unit = {},
     onRefreshTechNews: () -> Unit = {},
     onCheckUpdate: () -> Unit,
     modifier: Modifier = Modifier
@@ -836,6 +850,14 @@ fun TraineeDashboardScreen(
                             modifier = Modifier.widthIn(max = 640.dp)
                         )
 
+                        TraineeTab.ACADEMIC_RECORDS -> TraineeAcademicSubmissionsTab(
+                            uiState = uiState,
+                            onSubmitRecord = onSubmitAcademicRecord,
+                            onRefreshSubmissions = onRefreshAcademicSubmission,
+                            onDismissFeedback = onDismissAcademicFeedback,
+                            modifier = Modifier.widthIn(max = 640.dp)
+                        )
+
                         TraineeTab.NOTICES -> NoticesScreen(
                             notices = data?.notices.orEmpty(),
                             todayHoliday = data?.todayHoliday,
@@ -885,6 +907,7 @@ private fun TraineeTabIcon(
     val icon: ImageVector = when (tab) {
         TraineeTab.HOME -> if (selected) Icons.Rounded.Home else Icons.Outlined.Home
         TraineeTab.MARKS -> if (selected) Icons.Rounded.Grade else Icons.Outlined.Grade
+        TraineeTab.ACADEMIC_RECORDS -> if (selected) Icons.AutoMirrored.Rounded.MenuBook else Icons.AutoMirrored.Outlined.MenuBook
         TraineeTab.NOTICES -> if (selected) Icons.Rounded.Campaign else Icons.Outlined.Campaign
         TraineeTab.DUTY_CHART -> if (selected) Icons.Rounded.EventRepeat else Icons.Outlined.EventRepeat
         TraineeTab.PROJECT_GROUPS -> if (projectsLocked) {
@@ -957,13 +980,13 @@ private fun TodayStatusCard(
             ) {
                 EspTimeTile(
                     label = "ESP IN TIME",
-                    timeValue = attendance.inT,
+                    timeValue = IstDateTimeFormatter.formatTimeOnly(attendance.inT),
                     accentColor = colors.emeraldAccent,
                     modifier = Modifier.weight(1f)
                 )
                 EspTimeTile(
                     label = "ESP OUT TIME",
-                    timeValue = attendance.outT,
+                    timeValue = IstDateTimeFormatter.formatTimeOnly(attendance.outT),
                     accentColor = colors.amberAccent,
                     modifier = Modifier.weight(1f)
                 )

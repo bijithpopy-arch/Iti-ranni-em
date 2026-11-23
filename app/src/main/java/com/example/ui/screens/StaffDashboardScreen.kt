@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Groups
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PendingActions
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -50,6 +53,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -62,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.StaffTab
+import com.example.pdf.FullReportExportDialog
 import com.example.ui.components.CheckUpdateIconButton
 import com.example.ui.components.EspStatusBadge
 import com.example.ui.components.ExternalUrlHelper
@@ -91,6 +99,11 @@ fun StaffDashboardScreen(
     onConfirmDuplicatePunch: () -> Unit = {},
     onDismissDuplicatePunch: () -> Unit = {},
     onUndoAttendance: (roll: String) -> Unit = {},
+    onResetAttendanceToAbsent: (roll: String, studentName: String) -> Unit = { _, _ -> },
+    onRefreshAcademicSubmissions: () -> Unit = {},
+    onVerifyAcademicSubmission: (roll: String, submissionId: String, remark: String) -> Unit = { _, _, _ -> },
+    onForwardSingleAcademicToPrincipal: (roll: String) -> Unit = {},
+    onForwardAllAcademicToPrincipal: () -> Unit = {},
     onSetLateGrace: (roll: String, mode: String, cutoff: String, note: String) -> Unit,
     onDismissLateGraceFeedback: () -> Unit,
     onSendInstantParentAlert: (roll: String, name: String, alertType: String, msg: String) -> Unit,
@@ -153,6 +166,15 @@ fun StaffDashboardScreen(
         status == "PRESENT" || status.contains("HALF") || status.contains("OUT-PASS") || status == "LATE" || status == "ON-DUTY"
     }
     val attendanceClosed = uiState.staffData?.attendanceClosed ?: false
+    var showFullPdfDialog by remember { mutableStateOf(false) }
+
+    if (showFullPdfDialog && uiState.staffData != null) {
+        FullReportExportDialog(
+            staffData = uiState.staffData,
+            roleLabel = "Trade Instructor (EM)",
+            onDismiss = { showFullPdfDialog = false }
+        )
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -173,6 +195,7 @@ fun StaffDashboardScreen(
                     isRefreshing = uiState.isRefreshingStaff,
                     isCheckingUpdate = uiState.isCheckingUpdate,
                     hasUpdate = uiState.availableUpdate != null,
+                    onExportFullPdf = { showFullPdfDialog = true },
                     onCheckUpdate = onCheckUpdate,
                     onRefresh = onRefresh,
                     onLogout = onLogout
@@ -290,9 +313,18 @@ fun StaffDashboardScreen(
                             onConfirmDuplicatePunch = onConfirmDuplicatePunch,
                             onDismissDuplicatePunch = onDismissDuplicatePunch,
                             onUndoAttendance = onUndoAttendance,
+                            onResetAttendanceToAbsent = onResetAttendanceToAbsent,
                             onSetLateGrace = onSetLateGrace,
                             onDismissLateGraceFeedback = onDismissLateGraceFeedback,
                             onSendInstantParentAlert = onSendInstantParentAlert
+                        )
+
+                        StaffTab.ACADEMIC_RECORDS -> InstructorAcademicSubmissionsTab(
+                            uiState = uiState,
+                            onRefreshSubmissions = onRefreshAcademicSubmissions,
+                            onVerifySubmission = onVerifyAcademicSubmission,
+                            onForwardSingleToPrincipal = onForwardSingleAcademicToPrincipal,
+                            onForwardAllVerifiedToPrincipal = onForwardAllAcademicToPrincipal
                         )
 
                         StaffTab.SHOP_FLOOR -> ShopFloorControlTab(
@@ -344,6 +376,7 @@ private fun StaffHeaderBar(
     isRefreshing: Boolean,
     isCheckingUpdate: Boolean,
     hasUpdate: Boolean,
+    onExportFullPdf: () -> Unit,
     onCheckUpdate: () -> Unit,
     onRefresh: () -> Unit,
     onLogout: () -> Unit
@@ -377,6 +410,16 @@ private fun StaffHeaderBar(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                IconButton(
+                    onClick = onExportFullPdf,
+                    modifier = Modifier.testTag("staff_header_pdf_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PictureAsPdf,
+                        contentDescription = "Export Full PDF Report",
+                        tint = colors.emeraldAccent
+                    )
+                }
                 CheckUpdateIconButton(
                     isChecking = isCheckingUpdate,
                     hasUpdate = hasUpdate,
@@ -500,6 +543,7 @@ private fun StaffTabIcon(
     val colors = LocalItiColors.current
     val icon: ImageVector = when (tab) {
         StaffTab.ATTENDANCE_REGISTER -> if (selected) Icons.Rounded.Groups else Icons.Outlined.Groups
+        StaffTab.ACADEMIC_RECORDS -> if (selected) Icons.AutoMirrored.Rounded.MenuBook else Icons.AutoMirrored.Outlined.MenuBook
         StaffTab.SHOP_FLOOR -> if (selected) Icons.Rounded.Build else Icons.Outlined.Build
         StaffTab.PENDING_APPROVALS -> if (selected) Icons.Rounded.PendingActions else Icons.Outlined.PendingActions
         StaffTab.PARENT_ALERTS -> if (selected) Icons.Rounded.NotificationsActive else Icons.Outlined.NotificationsActive

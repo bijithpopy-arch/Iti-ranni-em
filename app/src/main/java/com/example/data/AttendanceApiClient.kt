@@ -65,7 +65,7 @@ class AttendanceApiClient {
                     add(
                         TraineeLeaveItem(
                             id = item.optString("id", item.optString("reqId", "")),
-                            date = item.optString("date", "-"),
+                            date = IstDateTimeFormatter.formatDateOnly(item.optString("date", "-")),
                             type = item.optString("type", "Out-Pass"),
                             status = item.optString("status", "PENDING_SIR"),
                             pdf = item.optString("pdf", item.optString("pdfUrl", "")).trim()
@@ -74,8 +74,10 @@ class AttendanceApiClient {
                 }
             }
 
-            val attendanceDate = json.optString("attendanceDate", json.optString("date", todayIstDateString()))
-                .ifBlank { todayIstDateString() }
+            val attendanceDate = IstDateTimeFormatter.formatDateOnly(
+                json.optString("attendanceDate", json.optString("date", todayIstDateString())),
+                todayIstDateString()
+            )
             val holidays = parseHolidays(json.optJSONArray("holidays"))
             val todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
                 ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) }
@@ -99,6 +101,10 @@ class AttendanceApiClient {
                     null
                 }
 
+            val mySubmission = parseSingleAcademicSubmissionOrNull(json.optJSONObject("myAcademicSubmission"))
+                ?: parseAcademicSubmissions(json.optJSONArray("academicSubmissions"))
+                    .firstOrNull { it.roll.equals(roll.trim(), ignoreCase = true) }
+
             TraineeDashboardData(
                 roll = roll.trim(),
                 name = name,
@@ -106,7 +112,7 @@ class AttendanceApiClient {
                 leaves = leaves,
                 attendanceClosed = json.optAttendanceClosed(),
                 attendanceDate = attendanceDate,
-                closedAt = json.optString("closedAt", "").trim(),
+                closedAt = IstDateTimeFormatter.formatTimeOnly(json.optString("closedAt", ""), ""),
                 todayHoliday = todayHoliday,
                 holidays = holidays,
                 notices = notices,
@@ -122,7 +128,8 @@ class AttendanceApiClient {
                 ).filter { it.roll.equals(roll.trim(), ignoreCase = true) },
                 myRunningLateAlerts = parseRunningLateAlerts(
                     json.optJSONArray("myRunningLateAlerts") ?: json.optJSONArray("runningLateAlerts")
-                ).filter { it.roll.equals(roll.trim(), ignoreCase = true) }
+                ).filter { it.roll.equals(roll.trim(), ignoreCase = true) },
+                myAcademicSubmission = mySubmission
             )
         }
     }
@@ -139,8 +146,10 @@ class AttendanceApiClient {
                 .ifBlank { "Trainee #$roll" }
             val resolvedRoll = json.optSafeString("roll", roll.trim())
             val attendance = parseAttendanceSummary(json.optJSONObject("attendance"))
-            val attendanceDate = json.optString("attendanceDate", json.optString("date", todayIstDateString()))
-                .ifBlank { todayIstDateString() }
+            val attendanceDate = IstDateTimeFormatter.formatDateOnly(
+                json.optString("attendanceDate", json.optString("date", todayIstDateString())),
+                todayIstDateString()
+            )
             val holidays = parseHolidays(json.optJSONArray("holidays"))
             val todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
                 ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) }
@@ -156,7 +165,7 @@ class AttendanceApiClient {
                 attendance = attendance,
                 attendanceClosed = json.optAttendanceClosed(),
                 attendanceDate = attendanceDate,
-                closedAt = json.optString("closedAt", "").trim(),
+                closedAt = IstDateTimeFormatter.formatTimeOnly(json.optString("closedAt", ""), ""),
                 todayHoliday = todayHoliday,
                 holidays = holidays,
                 notices = notices,
@@ -269,14 +278,14 @@ class AttendanceApiClient {
                             roll = item.optSafeString("roll"),
                             name = item.optString("name", "Unknown Trainee"),
                             todayStatus = item.optString("todayStatus", "ABSENT").ifBlank { "ABSENT" },
-                            inT = item.optString("inT", "-").ifBlank { "-" },
-                            outT = item.optString("outT", "-").ifBlank { "-" },
+                            inT = IstDateTimeFormatter.formatTimeOnly(item.optString("inT", "-")),
+                            outT = IstDateTimeFormatter.formatTimeOnly(item.optString("outT", "-")),
                             present = present,
                             half = half,
                             total = safeTotal,
                             pct = clampedPct,
                             lateGraceMode = lateGraceMode,
-                            lateCutoff = lateCutoff,
+                            lateCutoff = IstDateTimeFormatter.formatTimeOnly(lateCutoff, ""),
                             lateGraceNote = lateGraceNote
                         )
                     )
@@ -290,7 +299,7 @@ class AttendanceApiClient {
                     add(
                         PendingLeaveRequest(
                             reqId = item.optString("reqId", item.optString("id", "")),
-                            date = item.optString("date", "-"),
+                            date = IstDateTimeFormatter.formatDateOnly(item.optString("date", "-")),
                             roll = item.optSafeString("roll"),
                             name = item.optString("name", "Trainee"),
                             type = item.optString("type", "Out-Pass"),
@@ -301,8 +310,10 @@ class AttendanceApiClient {
                 }
             }
 
-            val attendanceDate = json.optString("attendanceDate", json.optString("date", todayIstDateString()))
-                .ifBlank { todayIstDateString() }
+            val attendanceDate = IstDateTimeFormatter.formatDateOnly(
+                json.optString("attendanceDate", json.optString("date", todayIstDateString())),
+                todayIstDateString()
+            )
             val holidays = parseHolidays(json.optJSONArray("holidays"))
             val todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
                 ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) }
@@ -323,7 +334,7 @@ class AttendanceApiClient {
                 parentAlerts = parseParentAlerts(json.optJSONArray("parentAlerts")),
                 attendanceClosed = json.optAttendanceClosed(),
                 attendanceDate = attendanceDate,
-                closedAt = json.optString("closedAt", "").trim(),
+                closedAt = IstDateTimeFormatter.formatTimeOnly(json.optString("closedAt", ""), ""),
                 todayHoliday = todayHoliday,
                 holidays = holidays,
                 notices = notices,
@@ -332,14 +343,17 @@ class AttendanceApiClient {
                 scanOverrides = parseScanOverrides(json.optJSONObject("scanOverrides")),
                 toolCribLogs = parseToolCribLogs(json.optJSONArray("toolCribLogs")),
                 todayDutySignOff = parseDutySignOff(json.optJSONObject("todayDutySignOff")),
-                lastScannerSyncTime = json.optString("lastScannerSync", "").trim(),
+                lastScannerSyncTime = IstDateTimeFormatter.formatDateTime(json.optString("lastScannerSync", ""), ""),
                 projectGroupsEnabled = json.optBoolean("projectGroupsEnabled", false),
                 projectGroups = parseProjectGroups(json.optJSONArray("projectGroups")),
                 monthlyMarks = parseMonthlyMarks(json.optJSONArray("monthlyMarks")),
                 workMarkQueries = parseWorkMarkQueries(
                     json.optJSONArray("workMarkQueries") ?: json.optJSONArray("labMarkQueries")
                 ),
-                runningLateAlerts = parseRunningLateAlerts(json.optJSONArray("runningLateAlerts"))
+                runningLateAlerts = parseRunningLateAlerts(json.optJSONArray("runningLateAlerts")),
+                academicSubmissions = parseAcademicSubmissions(
+                    json.optJSONArray("academicSubmissions") ?: json.optJSONArray("submissions")
+                )
             )
         }
     }
@@ -678,30 +692,150 @@ class AttendanceApiClient {
     }
 
     /**
-     * Reverts a recent manual punch, late mark, or status change cleanly on the server.
+     * Reverts a trainee's attendance for today back to ABSENT (or previous status) cleanly on the server.
+     * Sends both `roll` and `rollNo` along with `date` (dd-MM-yyyy) for full backend compatibility.
      */
     suspend fun undoAttendanceAction(
         pin: String,
         roll: String,
-        restoreStatus: String,
-        restoreInT: String = "",
-        restoreOutT: String = ""
+        date: String = todayIstDateString(),
+        restoreStatus: String = "ABSENT",
+        restoreInT: String = "-",
+        restoreOutT: String = "-"
     ): ApiResult<SimpleActionResult> {
+        val cleanRoll = roll.trim()
+        val cleanDate = IstDateTimeFormatter.formatDateOnly(date, todayIstDateString())
         val cleanStatus = restoreStatus.trim().uppercase().ifBlank { "ABSENT" }
         return executeGet(
             mapOf(
                 "action" to "undo_attendance",
                 "pin" to pin.trim(),
-                "roll" to roll.trim(),
-                "date" to todayIstDateString(),
+                "roll" to cleanRoll,
+                "rollNo" to cleanRoll,
+                "date" to cleanDate,
                 "restoreStatus" to cleanStatus,
                 "restoreInT" to restoreInT.trim(),
                 "restoreOutT" to restoreOutT.trim()
             )
         ) { json ->
             SimpleActionResult(
-                message = json.optString("msg", "Reverted Roll #$roll back to $cleanStatus.")
-                    .ifBlank { "Reverted Roll #$roll back to $cleanStatus." }
+                message = json.optString("msg", "Reset Roll #$cleanRoll to $cleanStatus for $cleanDate.")
+                    .ifBlank { "Reset Roll #$cleanRoll to $cleanStatus for $cleanDate." }
+            )
+        }
+    }
+
+    // ---------- Theory Notes & Lab Log Book Submission & Verification ----------
+
+    suspend fun submitAcademicRecord(
+        roll: String,
+        pin: String,
+        studentName: String,
+        theoryTopic: String,
+        theoryStatus: String,
+        theoryUpdatedDate: String,
+        labJobName: String,
+        labStatus: String,
+        labSignedDate: String,
+        remarks: String
+    ): ApiResult<SimpleActionResult> {
+        val cleanRoll = roll.trim()
+        return executeGet(
+            mapOf(
+                "action" to "submit_record",
+                "roll" to cleanRoll,
+                "rollNo" to cleanRoll,
+                "pin" to pin.trim(),
+                "studentName" to studentName.trim(),
+                "theoryTopic" to theoryTopic.trim(),
+                "theoryStatus" to theoryStatus.trim(),
+                "theoryUpdatedDate" to IstDateTimeFormatter.formatDateOnly(theoryUpdatedDate, todayIstDateString()),
+                "labJobName" to labJobName.trim(),
+                "labStatus" to labStatus.trim(),
+                "labSignedDate" to if (labSignedDate.isBlank()) "" else IstDateTimeFormatter.formatDateOnly(labSignedDate, ""),
+                "remarks" to remarks.trim()
+            )
+        ) { json ->
+            SimpleActionResult(
+                message = json.optString("msg", "Theory Notes & Lab Log Book record submitted for verification.")
+                    .ifBlank { "Theory Notes & Lab Log Book record submitted for verification." }
+            )
+        }
+    }
+
+    suspend fun fetchAcademicSubmissions(
+        pin: String,
+        roll: String = ""
+    ): ApiResult<List<AcademicSubmission>> {
+        val params = mutableMapOf(
+            "action" to "get_submissions",
+            "pin" to pin.trim()
+        )
+        if (roll.isNotBlank()) {
+            params["roll"] = roll.trim()
+            params["rollNo"] = roll.trim()
+        }
+        return executeGet(params) { json ->
+            val list = parseAcademicSubmissions(
+                json.optJSONArray("submissions")
+                    ?: json.optJSONArray("academicSubmissions")
+            )
+            if (roll.isNotBlank()) {
+                list.filter { it.roll.equals(roll.trim(), ignoreCase = true) }
+            } else {
+                list
+            }
+        }
+    }
+
+    suspend fun verifyAcademicSubmission(
+        pin: String,
+        roll: String,
+        submissionId: String = "",
+        instructorRemark: String = "",
+        verifiedBy: String = "Trade Instructor (EM)"
+    ): ApiResult<SimpleActionResult> {
+        val cleanRoll = roll.trim()
+        return executeGet(
+            mapOf(
+                "action" to "verify_submission",
+                "pin" to pin.trim(),
+                "roll" to cleanRoll,
+                "rollNo" to cleanRoll,
+                "submissionId" to submissionId.trim(),
+                "instructorRemark" to instructorRemark.trim(),
+                "verifiedBy" to verifiedBy.trim()
+            )
+        ) { json ->
+            SimpleActionResult(
+                message = json.optString("msg", "Verified & signed Roll #$cleanRoll's Theory Notes & Lab Log Book.")
+                    .ifBlank { "Verified & signed Roll #$cleanRoll's Theory Notes & Lab Log Book." }
+            )
+        }
+    }
+
+    suspend fun forwardAcademicSubmissionToPrincipal(
+        pin: String,
+        roll: String = "",
+        bulkAllVerified: Boolean = false
+    ): ApiResult<SimpleActionResult> {
+        val params = mutableMapOf(
+            "action" to "forward_to_principal",
+            "pin" to pin.trim(),
+            "bulk" to bulkAllVerified.toString()
+        )
+        if (roll.isNotBlank()) {
+            params["roll"] = roll.trim()
+            params["rollNo"] = roll.trim()
+        }
+        return executeGet(params) { json ->
+            val fallback = if (bulkAllVerified) {
+                "Forwarded all verified records to Principal."
+            } else {
+                "Forwarded Roll #$roll's verified record to Principal."
+            }
+            SimpleActionResult(
+                message = json.optString("msg", fallback).ifBlank { fallback }
             )
         }
     }
@@ -1070,13 +1204,13 @@ class AttendanceApiClient {
                 roll = roll.trim(),
                 mode = json.optString("mode", "PRESENT").ifBlank { "PRESENT" },
                 name = json.optString("name", "Roll #$roll").ifBlank { "Roll #$roll" },
-                time = json.optString("time", "-").ifBlank { "-" },
+                time = IstDateTimeFormatter.formatTimeOnly(json.optString("time", "-")),
                 message = json.optString("msg", "").trim()
             )
         }
     }
 
-    // ---------- Parsers with Strict AttendanceMath Guard ----------
+    // ---------- Parsers with Strict AttendanceMath & IST Time Guard ----------
 
     private fun parseAttendanceSummary(attObj: JSONObject?): AttendanceSummary {
         val obj = attObj ?: JSONObject()
@@ -1092,8 +1226,8 @@ class AttendanceApiClient {
         )
         return AttendanceSummary(
             todayStatus = obj.optString("todayStatus", "ABSENT").ifBlank { "ABSENT" },
-            inT = obj.optString("inT", "-").ifBlank { "-" },
-            outT = obj.optString("outT", "-").ifBlank { "-" },
+            inT = IstDateTimeFormatter.formatTimeOnly(obj.optString("inT", "-")),
+            outT = IstDateTimeFormatter.formatTimeOnly(obj.optString("outT", "-")),
             present = present,
             half = half,
             total = safeTotal,
@@ -1136,16 +1270,22 @@ class AttendanceApiClient {
         if (roll.isBlank()) return null
         return ShopFloorEntry(
             id = obj.optSafeString("id", "SF-$roll"),
-            date = obj.optString("date", todayIstDateString()).ifBlank { todayIstDateString() },
+            date = IstDateTimeFormatter.formatDateOnly(obj.optString("date", todayIstDateString()), todayIstDateString()),
             roll = roll,
             name = obj.optString("name", "Roll #$roll").ifBlank { "Roll #$roll" },
             attendancePct = obj.optSafeInt("attendancePct", obj.optSafeInt("pct")).coerceIn(0, 100),
             sessionType = obj.optString("sessionType", "POST_3PM").ifBlank { "POST_3PM" },
-            scheduledEndTime = obj.optString("scheduledEndTime", obj.optString("endTime", "05:00 PM")).ifBlank { "05:00 PM" },
+            scheduledEndTime = IstDateTimeFormatter.formatTimeOnly(
+                obj.optString("scheduledEndTime", obj.optString("endTime", "05:00 PM")),
+                "05:00 PM"
+            ),
             assignedReason = obj.optString("assignedReason", obj.optString("reason", "Auto (<80%)")).ifBlank { "Auto (<80%)" },
             status = obj.optString("status", "SCHEDULED").ifBlank { "SCHEDULED" },
-            checkInTime = obj.optString("checkInTime", "03:00 PM").ifBlank { "03:00 PM" },
-            checkOutCardScanTime = obj.optString("checkOutCardScanTime", obj.optString("Check_Out_Card_Scan_Time", "")).trim(),
+            checkInTime = IstDateTimeFormatter.formatTimeOnly(obj.optString("checkInTime", "03:00 PM"), "03:00 PM"),
+            checkOutCardScanTime = IstDateTimeFormatter.formatTimeOnly(
+                obj.optString("checkOutCardScanTime", obj.optString("Check_Out_Card_Scan_Time", "")),
+                ""
+            ),
             durationMinutes = obj.optSafeInt("durationMinutes"),
             verifiedByInstructor = obj.optBoolean("verifiedByInstructor", false),
             isManualOverride = obj.optBoolean("isManualOverride", false)
@@ -1167,7 +1307,7 @@ class AttendanceApiClient {
         return ScanOverrideState(
             earlyClassLogoutEnabled = obj.optBoolean("earlyClassLogoutEnabled", obj.optBoolean("earlyClassLogout", false)),
             shopFloorReleaseNowEnabled = obj.optBoolean("shopFloorReleaseNowEnabled", obj.optBoolean("shopFloorReleaseNow", false)),
-            updatedAt = obj.optString("updatedAt", "").trim(),
+            updatedAt = IstDateTimeFormatter.formatDateTime(obj.optString("updatedAt", ""), ""),
             updatedBy = obj.optString("updatedBy", "").trim()
         )
     }
@@ -1182,8 +1322,8 @@ class AttendanceApiClient {
                 add(
                     ToolCribLogEntry(
                         id = item.optSafeString("id", "TC-$i"),
-                        date = item.optString("date", todayIstDateString()),
-                        time = item.optString("time", ""),
+                        date = IstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()),
+                        time = IstDateTimeFormatter.formatTimeOnly(item.optString("time", ""), ""),
                         itemName = name,
                         conditionStatus = item.optString("conditionStatus", "DAMAGED").ifBlank { "DAMAGED" },
                         notes = item.optString("notes", "").trim(),
@@ -1196,14 +1336,14 @@ class AttendanceApiClient {
 
     private fun parseDutySignOff(obj: JSONObject?): DutySignOffRecord? {
         if (obj == null) return null
-        val date = obj.optString("date", "").trim()
+        val date = IstDateTimeFormatter.formatDateOnly(obj.optString("date", ""), "")
         val pair = obj.optString("pairLabel", "").trim()
         if (date.isBlank() && pair.isBlank()) return null
         return DutySignOffRecord(
             date = date.ifBlank { todayIstDateString() },
             pairLabel = pair,
             signedOff = obj.optBoolean("signedOff", false),
-            signedAt = obj.optString("signedAt", "").trim(),
+            signedAt = IstDateTimeFormatter.formatTimeOnly(obj.optString("signedAt", ""), ""),
             note = obj.optString("note", "").trim()
         )
     }
@@ -1216,8 +1356,8 @@ class AttendanceApiClient {
                 add(
                     ParentAlertItem(
                         id = item.optSafeString("id", item.optSafeString("alertId", "PA-$i")),
-                        date = item.optString("date", "-").ifBlank { "-" },
-                        time = item.optString("time", "").trim(),
+                        date = IstDateTimeFormatter.formatDateOnly(item.optString("date", "-")),
+                        time = IstDateTimeFormatter.formatTimeOnly(item.optString("time", ""), ""),
                         roll = item.optSafeString("roll"),
                         studentName = item.optString("studentName", item.optString("name", "Trainee"))
                             .ifBlank { "Trainee" },
@@ -1232,7 +1372,7 @@ class AttendanceApiClient {
 
     private fun parseSingleHoliday(obj: JSONObject?): HolidayAnnouncement? {
         if (obj == null) return null
-        val date = obj.optString("date", "").trim()
+        val date = IstDateTimeFormatter.formatDateOnly(obj.optString("date", ""), "")
         val reason = obj.optString("reason", "").trim()
         if (date.isBlank() && reason.isBlank()) return null
         return HolidayAnnouncement(
@@ -1240,7 +1380,7 @@ class AttendanceApiClient {
             date = date.ifBlank { todayIstDateString() },
             reason = reason.ifBlank { "Declared Holiday" },
             postedBy = obj.optString("postedBy", "Trade Instructor").ifBlank { "Trade Instructor" },
-            postedAt = obj.optString("postedAt", "").trim()
+            postedAt = IstDateTimeFormatter.formatDateTime(obj.optString("postedAt", ""), "")
         )
     }
 
@@ -1263,10 +1403,16 @@ class AttendanceApiClient {
     }
 
     private fun parseSingleNotice(item: JSONObject): NoticeItem {
+        val rawDate = item.optString("date", todayIstDateString())
+        val formattedDate = if (rawDate.contains("T") || rawDate.contains(":")) {
+            IstDateTimeFormatter.formatDateTime(rawDate, todayIstDateString())
+        } else {
+            IstDateTimeFormatter.formatDateOnly(rawDate, todayIstDateString())
+        }
         return NoticeItem(
             id = item.optSafeString("id", item.optSafeString("noticeId", "NTC-${item.hashCode()}")),
             title = item.optString("title", "Trade Notice").ifBlank { "Trade Notice" },
-            date = item.optString("date", todayIstDateString()).ifBlank { todayIstDateString() },
+            date = formattedDate,
             category = item.optString("category", item.optString("tag", "General")).ifBlank { "General" },
             body = item.optString("body", item.optString("message", "")).trim(),
             postedBy = item.optString("postedBy", "Govt. ITI Ranni").ifBlank { "Govt. ITI Ranni" },
@@ -1304,7 +1450,7 @@ class AttendanceApiClient {
             leaderName = item.optString("leaderName", "").trim(),
             memberRolls = memberList,
             submittedByRoll = item.optSafeString("submittedByRoll"),
-            createdAt = item.optString("createdAt", item.optString("date", "")).trim()
+            createdAt = IstDateTimeFormatter.formatDateTime(item.optString("createdAt", item.optString("date", "")), "")
         )
     }
 
@@ -1340,7 +1486,7 @@ class AttendanceApiClient {
                     MonthlyExamMark(
                         id = item.optSafeString("id", item.optSafeString("markId", "MK-$roll-$i")),
                         monthLabel = monthLabel.ifBlank { "Monthly Exam" },
-                        examDate = item.optString("examDate", item.optString("date", "")).trim(),
+                        examDate = IstDateTimeFormatter.formatDateOnly(item.optString("examDate", item.optString("date", "")), ""),
                         roll = roll,
                         studentName = item.optString("studentName", item.optString("name", "Trainee #$roll"))
                             .ifBlank { "Trainee #$roll" },
@@ -1351,7 +1497,7 @@ class AttendanceApiClient {
                         remarks = item.optString("remarks", "").trim(),
                         published = item.optBoolean("published", true),
                         isRevised = item.optBoolean("isRevised", item.optBoolean("revised", false)),
-                        updatedAt = item.optString("updatedAt", "").trim()
+                        updatedAt = IstDateTimeFormatter.formatDateTime(item.optString("updatedAt", ""), "")
                     )
                 )
             }
@@ -1369,8 +1515,8 @@ class AttendanceApiClient {
                 add(
                     WorkMarkQuery(
                         id = item.optSafeString("id", item.optSafeString("queryId", "WMQ-$i")),
-                        date = item.optString("date", todayIstDateString()).ifBlank { todayIstDateString() },
-                        time = item.optString("time", "").trim(),
+                        date = IstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()),
+                        time = IstDateTimeFormatter.formatTimeOnly(item.optString("time", ""), ""),
                         roll = item.optSafeString("roll"),
                         studentName = item.optString("studentName", item.optString("name", "Trainee"))
                             .ifBlank { "Trainee" },
@@ -1380,7 +1526,7 @@ class AttendanceApiClient {
                         traineeNote = note,
                         status = item.optString("status", "OPEN").ifBlank { "OPEN" }.uppercase(),
                         instructorReply = item.optString("instructorReply", item.optString("reply", "")).trim(),
-                        updatedAt = item.optString("updatedAt", "").trim()
+                        updatedAt = IstDateTimeFormatter.formatDateTime(item.optString("updatedAt", ""), "")
                     )
                 )
             }
@@ -1397,8 +1543,8 @@ class AttendanceApiClient {
                 add(
                     RunningLateAlert(
                         id = item.optSafeString("id", "RL-$roll-$i"),
-                        date = item.optString("date", todayIstDateString()).ifBlank { todayIstDateString() },
-                        time = item.optString("time", "").trim(),
+                        date = IstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()),
+                        time = IstDateTimeFormatter.formatTimeOnly(item.optString("time", ""), ""),
                         roll = roll,
                         studentName = item.optString("studentName", item.optString("name", "Trainee #$roll"))
                             .ifBlank { "Trainee #$roll" },
@@ -1408,6 +1554,50 @@ class AttendanceApiClient {
                         status = item.optString("status", "ACTIVE").ifBlank { "ACTIVE" }.uppercase()
                     )
                 )
+            }
+        }
+    }
+
+    private fun parseSingleAcademicSubmissionOrNull(item: JSONObject?): AcademicSubmission? {
+        if (item == null) return null
+        val roll = item.optSafeString("roll", item.optSafeString("rollNo"))
+        if (roll.isBlank()) return null
+        val sentToPrincipal = item.optBoolean("sentToPrincipal", false)
+        val rawVerStatus = item.optString("verificationStatus", item.optString("status", ""))
+            .trim()
+            .uppercase()
+            .ifBlank {
+                if (sentToPrincipal) AcademicSubmissionStatuses.FORWARDED_TO_PRINCIPAL
+                else AcademicSubmissionStatuses.PENDING_VERIFICATION
+            }
+        return AcademicSubmission(
+            id = item.optSafeString("id", item.optSafeString("submissionId", "SUB-$roll")),
+            roll = roll,
+            studentName = item.optString("studentName", item.optString("name", "Trainee #$roll"))
+                .ifBlank { "Trainee #$roll" },
+            theoryTopic = item.optString("theoryTopic", "").trim(),
+            theoryStatus = item.optString("theoryStatus", "Pending").ifBlank { "Pending" },
+            theoryUpdatedDate = IstDateTimeFormatter.formatDateOnly(item.optString("theoryUpdatedDate", ""), ""),
+            labJobName = item.optString("labJobName", "").trim(),
+            labStatus = item.optString("labStatus", "Incomplete").ifBlank { "Incomplete" },
+            labSignedDate = IstDateTimeFormatter.formatDateOnly(item.optString("labSignedDate", ""), ""),
+            remarks = item.optString("remarks", "").trim(),
+            verificationStatus = rawVerStatus,
+            verifiedBy = item.optString("verifiedBy", "").trim(),
+            verifiedAt = IstDateTimeFormatter.formatDateTime(item.optString("verifiedAt", ""), ""),
+            instructorRemark = item.optString("instructorRemark", "").trim(),
+            sentToPrincipal = sentToPrincipal || rawVerStatus == AcademicSubmissionStatuses.FORWARDED_TO_PRINCIPAL,
+            forwardedAt = IstDateTimeFormatter.formatDateTime(item.optString("forwardedAt", ""), ""),
+            submittedAt = IstDateTimeFormatter.formatDateTime(item.optString("submittedAt", ""), "")
+        )
+    }
+
+    private fun parseAcademicSubmissions(array: JSONArray?): List<AcademicSubmission> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (i in 0 until array.length()) {
+                val parsed = parseSingleAcademicSubmissionOrNull(array.optJSONObject(i)) ?: continue
+                add(parsed)
             }
         }
     }

@@ -26,7 +26,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Campaign
@@ -42,7 +44,9 @@ import androidx.compose.material.icons.rounded.PendingActions
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -64,6 +68,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -82,9 +87,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.AttendanceMath
+import com.example.data.IstDateTimeFormatter
 import com.example.data.PrincipalTab
 import com.example.data.ShopFloorEntry
 import com.example.data.StaffAttendanceRecord
+import com.example.pdf.FullReportExportDialog
+import com.example.ui.components.AttendanceStatusPill
 import com.example.ui.components.CheckUpdateIconButton
 import com.example.ui.components.ExternalUrlHelper
 import com.example.ui.components.PinnedPrincipalBroadcastBanner
@@ -110,6 +118,8 @@ fun PrincipalDashboardScreen(
     onRejectLeave: (reqId: String, reason: String) -> Unit,
     onDismissApprovalFeedback: () -> Unit,
     onPublishPinnedBroadcast: (title: String, category: String, body: String, onReset: () -> Unit) -> Unit,
+    onResetAttendanceToAbsent: (roll: String, studentName: String) -> Unit = { _, _ -> },
+    onRefreshAcademicSubmissions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BackHandler {
@@ -132,6 +142,16 @@ fun PrincipalDashboardScreen(
     val overallTradePct = remember(allRecords) {
         if (allRecords.isEmpty()) 0
         else allRecords.map { it.pct.coerceIn(0, 100) }.average().roundToInt().coerceIn(0, 100)
+    }
+
+    var showFullPdfDialog by remember { mutableStateOf(false) }
+
+    if (showFullPdfDialog && staffData != null) {
+        FullReportExportDialog(
+            staffData = staffData,
+            roleLabel = "Principal, Govt. ITI Ranni",
+            onDismiss = { showFullPdfDialog = false }
+        )
     }
 
     BoxWithConstraints(
@@ -206,6 +226,17 @@ fun PrincipalDashboardScreen(
                         }
 
                         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            IconButton(
+                                onClick = { showFullPdfDialog = true },
+                                enabled = staffData != null,
+                                modifier = Modifier.testTag("principal_header_pdf_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PictureAsPdf,
+                                    contentDescription = "Export Full PDF Report",
+                                    tint = colors.emeraldAccent
+                                )
+                            }
                             CheckUpdateIconButton(
                                 isChecking = uiState.isCheckingUpdate,
                                 hasUpdate = uiState.availableUpdate != null,
@@ -325,9 +356,16 @@ fun PrincipalDashboardScreen(
                             uiState = uiState,
                             overallTradePct = overallTradePct,
                             activeHeadcount = activeHeadcount,
+                            onExportFullPdf = { showFullPdfDialog = true },
                             onExportPdf = {
                                 onExportPdf { url -> ExternalUrlHelper.openUrl(context, url) }
-                            }
+                            },
+                            onResetAttendanceToAbsent = onResetAttendanceToAbsent
+                        )
+
+                        PrincipalTab.ACADEMIC_RECORDS -> PrincipalAcademicSubmissionsTab(
+                            uiState = uiState,
+                            onRefreshSubmissions = onRefreshAcademicSubmissions
                         )
 
                         PrincipalTab.SHOP_FLOOR_AUDIT -> PrincipalShopFloorAuditTab(uiState = uiState)
@@ -359,6 +397,7 @@ private fun PrincipalTabIcon(
     val colors = LocalItiColors.current
     val icon: ImageVector = when (tab) {
         PrincipalTab.SCORECARD -> if (selected) Icons.Rounded.Assessment else Icons.Outlined.Assessment
+        PrincipalTab.ACADEMIC_RECORDS -> if (selected) Icons.AutoMirrored.Rounded.MenuBook else Icons.AutoMirrored.Outlined.MenuBook
         PrincipalTab.SHOP_FLOOR_AUDIT -> if (selected) Icons.Rounded.FactCheck else Icons.Outlined.FactCheck
         PrincipalTab.LEAVE_APPROVALS -> if (selected) Icons.Rounded.PendingActions else Icons.Outlined.PendingActions
         PrincipalTab.BROADCASTS -> if (selected) Icons.Rounded.Campaign else Icons.Outlined.Campaign
@@ -383,7 +422,9 @@ private fun PrincipalScorecardTab(
     uiState: AppUiState,
     overallTradePct: Int,
     activeHeadcount: Int,
-    onExportPdf: () -> Unit
+    onExportFullPdf: () -> Unit,
+    onExportPdf: () -> Unit,
+    onResetAttendanceToAbsent: (roll: String, studentName: String) -> Unit
 ) {
     val colors = LocalItiColors.current
     val context = LocalContext.current
@@ -394,6 +435,62 @@ private fun PrincipalScorecardTab(
             .sortedBy { it.pct }
     }
     val eligibleCount = (allRecords.size - riskWatchlist.size).coerceAtLeast(0)
+    var undoConfirmTarget by remember { mutableStateOf<StaffAttendanceRecord?>(null) }
+
+    val undoTarget = undoConfirmTarget
+    if (undoTarget != null) {
+        AlertDialog(
+            onDismissRequest = { undoConfirmTarget = null },
+            containerColor = colors.cardSurface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = colors.textMuted,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.Undo,
+                    contentDescription = null,
+                    tint = colors.amberAccent,
+                    modifier = Modifier.size(26.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Undo Attendance?",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            },
+            text = {
+                Text(
+                    text = "Reset ${undoTarget.name} (Roll #${undoTarget.roll}) to ABSENT for today?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val target = undoTarget
+                        undoConfirmTarget = null
+                        onResetAttendanceToAbsent(target.roll, target.name)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.redAccent,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.testTag("principal_confirm_undo_ok")
+                ) {
+                    Text("Reset to ABSENT")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { undoConfirmTarget = null },
+                    modifier = Modifier.testTag("principal_confirm_undo_cancel")
+                ) {
+                    Text("Cancel", color = colors.textMuted)
+                }
+            }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -461,10 +558,10 @@ private fun PrincipalScorecardTab(
                         )
                     }
 
-                    // 1-Tap Official Register Export PDF
+                    // 1-Tap Full Multi-Section App PDF Report
                     Button(
-                        onClick = onExportPdf,
-                        enabled = !uiState.isExportingPdf,
+                        onClick = onExportFullPdf,
+                        enabled = uiState.staffData != null,
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = colors.violetAccent,
@@ -473,22 +570,42 @@ private fun PrincipalScorecardTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp)
+                            .testTag("principal_export_full_pdf_button")
+                    ) {
+                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Print / Export Full App PDF Report",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+
+                    // Server Sheet Register PDF
+                    OutlinedButton(
+                        onClick = onExportPdf,
+                        enabled = !uiState.isExportingPdf,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, colors.violetAccent.copy(alpha = 0.6f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.violetAccent),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
                             .testTag("principal_export_register_button")
                     ) {
                         if (uiState.isExportingPdf) {
                             CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.5.dp,
-                                modifier = Modifier.size(18.dp)
+                                color = colors.violetAccent,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Generating Official Register...")
+                            Text("Generating Server Register PDF...")
                         } else {
-                            Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "1-Tap Official ITI Register Export (PDF)",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                                text = "Export Server Daily Register PDF",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
                             )
                         }
                     }
@@ -547,6 +664,171 @@ private fun PrincipalScorecardTab(
         } else {
             items(riskWatchlist, key = { "risk_${it.roll}" }) { rec ->
                 PrincipalRiskWatchlistCard(record = rec)
+            }
+        }
+
+        // Daily Attendance Register (All Trainees with IST Times & Undo Attendance Action)
+        item {
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Today's Attendance Register (${uiState.staffData?.attendanceDate.orEmpty().ifBlank { IstDateTimeFormatter.nowIstDateString() }})",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "${allRecords.size} trainee(s)",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                    color = colors.skyAccent
+                )
+            }
+        }
+
+        if (uiState.rollCallFeedbackMessage != null) {
+            item {
+                InlineAlertCard(message = uiState.rollCallFeedbackMessage, isError = false)
+            }
+        }
+        if (uiState.rollCallError != null) {
+            item {
+                InlineAlertCard(message = uiState.rollCallError, isError = true)
+            }
+        }
+
+        items(allRecords, key = { "principal_reg_${it.roll}_${it.name}" }) { rec ->
+            PrincipalDailyRegisterRowCard(
+                record = rec,
+                isUndoing = uiState.undoingRoll == rec.roll,
+                isBusy = uiState.isRunningRollCallOp,
+                onRequestUndo = { undoConfirmTarget = rec }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PrincipalDailyRegisterRowCard(
+    record: StaffAttendanceRecord,
+    isUndoing: Boolean,
+    isBusy: Boolean,
+    onRequestUndo: () -> Unit
+) {
+    val colors = LocalItiColors.current
+    val formattedInT = IstDateTimeFormatter.formatTimeOnly(record.inT)
+    val formattedOutT = IstDateTimeFormatter.formatTimeOnly(record.outT)
+    val canUndoToday = record.hasPunchedToday || formattedInT != "-" || formattedOutT != "-"
+    val clampedPct = record.pct.coerceIn(0, 100)
+    val pctColor = when {
+        clampedPct >= 80 -> colors.emeraldAccent
+        clampedPct >= 75 -> colors.amberAccent
+        else -> colors.redAccent
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colors.cardSurface,
+        border = BorderStroke(1.dp, colors.borderSubtle),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("principal_register_row_${record.roll}")
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Roll #${record.roll.padStart(2, '0')} • ${record.name}",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "P: ${record.present} • H: ${record.half} • Total: ${record.total}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                        color = colors.textMuted
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = pctColor.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, pctColor.copy(alpha = 0.45f))
+                ) {
+                    Text(
+                        text = "$clampedPct%",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontFamily = JetBrainsMonoFamily,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = pctColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AttendanceStatusPill(status = record.todayStatus)
+                    if (canUndoToday) {
+                        OutlinedButton(
+                            onClick = onRequestUndo,
+                            enabled = !isBusy && !isUndoing,
+                            shape = RoundedCornerShape(9.dp),
+                            border = BorderStroke(1.dp, colors.amberAccent.copy(alpha = 0.7f)),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = colors.amberContainer,
+                                contentColor = colors.amberAccent
+                            ),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier
+                                .height(30.dp)
+                                .testTag("principal_row_undo_${record.roll}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Undo,
+                                contentDescription = "Undo Attendance",
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = if (isUndoing) "..." else "Undo",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "IN: $formattedInT",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                        color = colors.emeraldAccent
+                    )
+                    Text(
+                        text = "OUT: $formattedOutT",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                        color = colors.amberAccent
+                    )
+                }
             }
         }
     }

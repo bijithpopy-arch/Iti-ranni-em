@@ -9,6 +9,7 @@ enum class UserRole(val displayName: String) {
 
 enum class TraineeTab(val label: String) {
     HOME("Home"),
+    ACADEMIC_RECORDS("LogBook"),
     MARKS("Marks"),
     NOTICES("Notices"),
     DUTY_CHART("Duty"),
@@ -20,20 +21,22 @@ enum class TraineeTab(val label: String) {
  */
 enum class StaffTab(val label: String) {
     ATTENDANCE_REGISTER("Register"),
-    SHOP_FLOOR("Shop Floor"),
-    PENDING_APPROVALS("Approvals"),
+    ACADEMIC_RECORDS("LogBook"),
+    SHOP_FLOOR("ShopFlr"),
+    PENDING_APPROVALS("Approve"),
     PARENT_ALERTS("Alerts"),
-    CAMPUS_HUB("Ops & Hub")
+    CAMPUS_HUB("Hub")
 }
 
 /**
- * Principal executive oversight tabs (Read-only Scorecard, Audit, Approvals, Broadcasts)
+ * Principal executive oversight tabs (Scorecard, Log Book, Audit, Approvals, Broadcasts)
  */
 enum class PrincipalTab(val label: String) {
     SCORECARD("Scorecard"),
-    SHOP_FLOOR_AUDIT("Audit Log"),
-    LEAVE_APPROVALS("Approvals"),
-    BROADCASTS("Broadcasts")
+    ACADEMIC_RECORDS("LogBook"),
+    SHOP_FLOOR_AUDIT("Audit"),
+    LEAVE_APPROVALS("Approve"),
+    BROADCASTS("Broadcast")
 }
 
 object ParentAlertTypes {
@@ -204,6 +207,42 @@ data class RunningLateAlert(
     val status: String = "ACTIVE"
 )
 
+object AcademicSubmissionStatuses {
+    const val NOT_SUBMITTED = "NOT_SUBMITTED"
+    const val PENDING_VERIFICATION = "PENDING_VERIFICATION"
+    const val VERIFIED = "VERIFIED"
+    const val FORWARDED_TO_PRINCIPAL = "FORWARDED_TO_PRINCIPAL"
+}
+
+data class AcademicSubmission(
+    val id: String = "",
+    val roll: String,
+    val studentName: String = "",
+    val theoryTopic: String = "",
+    val theoryStatus: String = "Pending", // "Completed" / "In Progress" / "Pending"
+    val theoryUpdatedDate: String = "",
+    val labJobName: String = "",
+    val labStatus: String = "Incomplete", // "Signed by Instructor" / "Submitted for Sign" / "Incomplete"
+    val labSignedDate: String = "",
+    val remarks: String = "",
+    val verificationStatus: String = AcademicSubmissionStatuses.PENDING_VERIFICATION,
+    val verifiedBy: String = "",
+    val verifiedAt: String = "",
+    val instructorRemark: String = "",
+    val sentToPrincipal: Boolean = false,
+    val forwardedAt: String = "",
+    val submittedAt: String = ""
+) {
+    val isVerifiedOrForwarded: Boolean
+        get() = verificationStatus.equals(AcademicSubmissionStatuses.VERIFIED, ignoreCase = true) ||
+            verificationStatus.equals(AcademicSubmissionStatuses.FORWARDED_TO_PRINCIPAL, ignoreCase = true) ||
+            sentToPrincipal
+
+    val isForwarded: Boolean
+        get() = sentToPrincipal ||
+            verificationStatus.equals(AcademicSubmissionStatuses.FORWARDED_TO_PRINCIPAL, ignoreCase = true)
+}
+
 data class TraineeDashboardData(
     val roll: String,
     val name: String,
@@ -223,7 +262,8 @@ data class TraineeDashboardData(
     val dutyItems: List<String> = emptyList(),
     val monthlyMarks: List<MonthlyExamMark> = emptyList(),
     val myWorkMarkQueries: List<WorkMarkQuery> = emptyList(),
-    val myRunningLateAlerts: List<RunningLateAlert> = emptyList()
+    val myRunningLateAlerts: List<RunningLateAlert> = emptyList(),
+    val myAcademicSubmission: AcademicSubmission? = null
 )
 
 data class ParentAlertItem(
@@ -353,7 +393,8 @@ data class StaffDashboardData(
     val projectGroups: List<ProjectGroup> = emptyList(),
     val monthlyMarks: List<MonthlyExamMark> = emptyList(),
     val workMarkQueries: List<WorkMarkQuery> = emptyList(),
-    val runningLateAlerts: List<RunningLateAlert> = emptyList()
+    val runningLateAlerts: List<RunningLateAlert> = emptyList(),
+    val academicSubmissions: List<AcademicSubmission> = emptyList()
 )
 
 data class LeaveSubmitResult(

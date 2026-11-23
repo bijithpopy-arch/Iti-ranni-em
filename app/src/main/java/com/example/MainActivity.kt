@@ -141,6 +141,9 @@ fun ItiAttendanceApp(
                     onDismissWorkQueryFeedback = viewModel::dismissWorkQueryFeedback,
                     onSubmitRunningLate = viewModel::submitTraineeRunningLateAlert,
                     onDismissRunningLateFeedback = viewModel::dismissRunningLateFeedback,
+                    onSubmitAcademicRecord = viewModel::submitTraineeAcademicRecord,
+                    onRefreshAcademicSubmission = viewModel::refreshTraineeAcademicSubmission,
+                    onDismissAcademicFeedback = viewModel::dismissAcademicFeedback,
                     onRefreshTechNews = viewModel::refreshTechnicalNews,
                     onCheckUpdate = { viewModel.checkForAppUpdate(silentIfUpToDate = false) }
                 )
@@ -176,6 +179,15 @@ fun ItiAttendanceApp(
                     onConfirmDuplicatePunch = viewModel::confirmDuplicateManualPunchOverride,
                     onDismissDuplicatePunch = viewModel::dismissDuplicatePunchPrompt,
                     onUndoAttendance = viewModel::undoRecentAttendanceChange,
+                    onResetAttendanceToAbsent = viewModel::resetTraineeAttendanceToAbsent,
+                    onRefreshAcademicSubmissions = viewModel::refreshStaffAcademicSubmissions,
+                    onVerifyAcademicSubmission = viewModel::verifyAcademicSubmission,
+                    onForwardSingleAcademicToPrincipal = { roll ->
+                        viewModel.forwardAcademicSubmissionToPrincipal(roll = roll, bulkAllVerified = false)
+                    },
+                    onForwardAllAcademicToPrincipal = {
+                        viewModel.forwardAcademicSubmissionToPrincipal(roll = "", bulkAllVerified = true)
+                    },
                     onSetLateGrace = viewModel::setTraineeLateGrace,
                     onDismissLateGraceFeedback = viewModel::dismissLateGraceFeedback,
                     onSendInstantParentAlert = viewModel::sendInstantParentAlert,
@@ -213,7 +225,9 @@ fun ItiAttendanceApp(
                     onDismissApprovalFeedback = viewModel::dismissApprovalFeedback,
                     onPublishPinnedBroadcast = { title, cat, body, onReset ->
                         viewModel.postTradeNotice(title, cat, body, pinned = true, onSuccessReset = onReset)
-                    }
+                    },
+                    onResetAttendanceToAbsent = viewModel::resetTraineeAttendanceToAbsent,
+                    onRefreshAcademicSubmissions = viewModel::refreshStaffAcademicSubmissions
                 )
             }
         }

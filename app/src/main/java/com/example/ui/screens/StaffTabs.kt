@@ -76,10 +76,12 @@ import com.example.R
 import com.example.data.AttendanceMath
 import com.example.data.AttendanceUndoRecord
 import com.example.data.EspTapResult
+import com.example.data.IstDateTimeFormatter
 import com.example.data.PendingLeaveRequest
 import com.example.data.ShopFloorEntry
 import com.example.data.StaffAttendanceRecord
 import com.example.data.UserRole
+import com.example.pdf.FullReportExportDialog
 import com.example.ui.components.ActiveHolidayBanner
 import com.example.ui.components.AttendanceStatusPill
 import com.example.ui.components.DigitalSignaturePad
@@ -471,6 +473,7 @@ fun AttendanceRegisterTab(
     onConfirmDuplicatePunch: () -> Unit = {},
     onDismissDuplicatePunch: () -> Unit = {},
     onUndoAttendance: (roll: String) -> Unit = {},
+    onResetAttendanceToAbsent: (roll: String, studentName: String) -> Unit = { _, _ -> },
     onSetLateGrace: (roll: String, mode: String, cutoff: String, note: String) -> Unit,
     onDismissLateGraceFeedback: () -> Unit,
     onSendInstantParentAlert: (roll: String, name: String, alertType: String, msg: String) -> Unit,
@@ -484,6 +487,8 @@ fun AttendanceRegisterTab(
     val todayHoliday = staffData?.todayHoliday
 
     var showCloseConfirmDialog by remember { mutableStateOf(false) }
+    var undoConfirmTarget by remember { mutableStateOf<StaffAttendanceRecord?>(null) }
+    var showFullPdfDialog by remember { mutableStateOf(false) }
 
     val absentCount = remember(allRecords) {
         allRecords.count { it.todayStatus.uppercase().let { s -> s == "ABSENT" || s.isBlank() } }
@@ -636,6 +641,70 @@ fun AttendanceRegisterTab(
                     Text("Keep Existing", color = colors.textMuted)
                 }
             }
+        )
+    }
+
+    // Undo Attendance Confirmation Dialog ("Reset [Trainee Name] (Roll #[X]) to ABSENT for today?")
+    val undoTarget = undoConfirmTarget
+    if (undoTarget != null) {
+        AlertDialog(
+            onDismissRequest = { undoConfirmTarget = null },
+            containerColor = colors.cardSurface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = colors.textMuted,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.Undo,
+                    contentDescription = null,
+                    tint = colors.amberAccent,
+                    modifier = Modifier.size(26.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Undo Attendance?",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            },
+            text = {
+                Text(
+                    text = "Reset ${undoTarget.name} (Roll #${undoTarget.roll}) to ABSENT for today?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val target = undoTarget
+                        undoConfirmTarget = null
+                        onResetAttendanceToAbsent(target.roll, target.name)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.redAccent,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.testTag("confirm_undo_attendance_ok")
+                ) {
+                    Text("Reset to ABSENT")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { undoConfirmTarget = null },
+                    modifier = Modifier.testTag("confirm_undo_attendance_cancel")
+                ) {
+                    Text("Cancel", color = colors.textMuted)
+                }
+            }
+        )
+    }
+
+    if (showFullPdfDialog && staffData != null) {
+        FullReportExportDialog(
+            staffData = staffData,
+            roleLabel = "Trade Instructor (EM)",
+            onDismiss = { showFullPdfDialog = false }
         )
     }
 
@@ -918,30 +987,22 @@ fun AttendanceRegisterTab(
             }
         }
 
-        // Export Daily Attendance PDF Button
+        // Export Full Multi-Section PDF Report + Server Register PDF
         item {
-            Button(
-                onClick = onExportPdf,
-                enabled = !uiState.isExportingPdf,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.skyAccent,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .testTag("export_attendance_pdf_button")
-            ) {
-                if (uiState.isExportingPdf) {
-                    CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.5.dp,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text("Generating Attendance PDF...")
-                } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { showFullPdfDialog = true },
+                    enabled = staffData != null,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.skyAccent,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("export_full_pdf_report_button")
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.PictureAsPdf,
                         contentDescription = null,
@@ -949,9 +1010,42 @@ fun AttendanceRegisterTab(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Export Daily Attendance PDF",
+                        text = "Print / Export Full App PDF Report",
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                     )
+                }
+
+                OutlinedButton(
+                    onClick = onExportPdf,
+                    enabled = !uiState.isExportingPdf,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.55f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.skyAccent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .testTag("export_attendance_pdf_button")
+                ) {
+                    if (uiState.isExportingPdf) {
+                        CircularProgressIndicator(
+                            color = colors.skyAccent,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Generating Server Attendance Sheet PDF...")
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.PictureAsPdf,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Export Server Daily Attendance PDF",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                    }
                 }
             }
         }
@@ -1094,7 +1188,7 @@ fun AttendanceRegisterTab(
                     isBusy = uiState.isRunningRollCallOp || uiState.manualPunchingRoll == record.roll,
                     isUndoing = uiState.undoingRoll == record.roll,
                     onManualPunch = { status -> onManualPunch(record.roll, status) },
-                    onUndo = { onUndoAttendance(record.roll) },
+                    onRequestResetToAbsent = { undoConfirmTarget = record },
                     onSendInstantParentAlert = { alertType ->
                         onSendInstantParentAlert(record.roll, record.name, alertType, "")
                     }
@@ -1112,7 +1206,7 @@ private fun AttendanceRegisterRowCard(
     isBusy: Boolean,
     isUndoing: Boolean = false,
     onManualPunch: (String) -> Unit,
-    onUndo: () -> Unit = {},
+    onRequestResetToAbsent: () -> Unit = {},
     onSendInstantParentAlert: (String) -> Unit
 ) {
     val colors = LocalItiColors.current
@@ -1123,6 +1217,11 @@ private fun AttendanceRegisterRowCard(
         clampedPct >= 75 -> colors.amberAccent
         else -> colors.redAccent
     }
+    val formattedInT = IstDateTimeFormatter.formatTimeOnly(record.inT)
+    val formattedOutT = IstDateTimeFormatter.formatTimeOnly(record.outT)
+    val canUndoToday = record.hasPunchedToday ||
+        (formattedInT != "-") ||
+        (formattedOutT != "-")
     val isAbsent = record.todayStatus.equals("ABSENT", ignoreCase = true) || record.todayStatus.isBlank()
     val isLowAttendance = clampedPct < 80
     val neededClasses = record.sessionsNeededFor80Pct
@@ -1233,24 +1332,56 @@ private fun AttendanceRegisterRowCard(
                 }
             }
 
-            // Status Pill + IN/OUT times
+            // Status Pill + IST IN/OUT times + Compact Undo button for any punched row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                AttendanceStatusPill(status = record.todayStatus)
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AttendanceStatusPill(status = record.todayStatus)
+                    if (canUndoToday) {
+                        OutlinedButton(
+                            onClick = onRequestResetToAbsent,
+                            enabled = !isBusy && !isUndoing,
+                            shape = RoundedCornerShape(9.dp),
+                            border = BorderStroke(1.dp, colors.amberAccent.copy(alpha = 0.7f)),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = colors.amberContainer,
+                                contentColor = colors.amberAccent
+                            ),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier
+                                .height(30.dp)
+                                .testTag("row_undo_button_${record.roll}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Undo,
+                                contentDescription = "Undo Attendance",
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = if (isUndoing) "..." else "Undo",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "IN: ${record.inT}",
+                        text = "IN: $formattedInT",
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                         color = colors.emeraldAccent
                     )
                     Text(
-                        text = "OUT: ${record.outT}",
+                        text = "OUT: $formattedOutT",
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                         color = colors.amberAccent
                     )
@@ -1297,36 +1428,11 @@ private fun AttendanceRegisterRowCard(
                 }
             }
 
-            // Quick Manual Status Chips (PRESENT / LATE / HALF-DAY / ABSENT) + Undo + Parent Alert + WhatsApp
+            // Quick Manual Status Chips (LATE / HALF-DAY / ABSENT / ON-DUTY) + Parent Alert + WhatsApp
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (undoRecord != null) {
-                    item {
-                        FilterChip(
-                            selected = true,
-                            enabled = !isBusy && !isUndoing,
-                            onClick = onUndo,
-                            leadingIcon = {
-                                Icon(Icons.Rounded.Undo, contentDescription = null, modifier = Modifier.size(14.dp))
-                            },
-                            label = {
-                                Text(
-                                    text = if (isUndoing) "Undoing..." else "Undo (${undoRecord.previousStatus})",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = colors.amberContainer,
-                                selectedLabelColor = colors.amberAccent,
-                                selectedLeadingIconColor = colors.amberAccent
-                            ),
-                            modifier = Modifier.testTag("row_undo_button_${record.roll}")
-                        )
-                    }
-                }
-
                 items(listOf("LATE", "HALF-DAY", "ABSENT", "ON-DUTY")) { exType ->
                     val isCurrent = record.todayStatus.equals(exType, ignoreCase = true)
                     FilterChip(

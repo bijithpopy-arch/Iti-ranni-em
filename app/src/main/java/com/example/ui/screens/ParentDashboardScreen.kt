@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.IstDateTimeFormatter
 import com.example.data.ParentAlertItem
 import com.example.data.ParentAlertTypes
 import com.example.notifications.AttendanceNotificationHelper
@@ -404,13 +405,13 @@ fun ParentDashboardScreen(
                             ) {
                                 ParentTimeTile(
                                     label = "MORNING IN",
-                                    timeValue = data.attendance.inT,
+                                    timeValue = IstDateTimeFormatter.formatTimeOnly(data.attendance.inT),
                                     accentColor = colors.emeraldAccent,
                                     modifier = Modifier.weight(1f)
                                 )
                                 ParentTimeTile(
                                     label = "AFTERNOON OUT",
-                                    timeValue = data.attendance.outT,
+                                    timeValue = IstDateTimeFormatter.formatTimeOnly(data.attendance.outT),
                                     accentColor = colors.amberAccent,
                                     modifier = Modifier.weight(1f)
                                 )

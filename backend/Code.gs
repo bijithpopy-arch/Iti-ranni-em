@@ -31,7 +31,8 @@ const ESP_SECRET_KEY = 'EMECH_KEY_2026';
 
 // Update these PINs in Script Properties (INSTRUCTOR_PIN / PRINCIPAL_PIN) or below as fallback
 const DEFAULT_INSTRUCTOR_PIN = '2025';
-const DEFAULT_PRINCIPAL_PIN = '9999';
+const DEFAULT_PRINCIPAL_PIN = '8492';
+const FALLBACK_PRINCIPAL_PIN = '9999';
 
 const EXAM_THRESHOLD_PCT = 80;
 const CLASS_END_HOUR_IST = 15; // 3:00 PM IST
@@ -119,6 +120,16 @@ function doGet(e) {
       case 'reject_leave':
         return requireStaffPin(params, (role) => handleRejectLeave(ss, params, role));
 
+      // ---- Theory Notes & Lab Log Book Submissions & Verification ----
+      case 'submit_record':
+        return handleSubmitAcademicRecord(ss, params);
+      case 'get_submissions':
+        return handleGetAcademicSubmissions(ss, params);
+      case 'verify_submission':
+        return requireStaffPin(params, (role) => handleVerifyAcademicSubmission(ss, params, role));
+      case 'forward_to_principal':
+        return requireStaffPin(params, (role) => handleForwardAcademicToPrincipal(ss, params, role));
+
       // ---- Project Groups & Register PDF Export ----
       case 'set_project_groups_access':
         return requireStaffPin(params, () => handleSetProjectGroupsAccess(params));
@@ -191,6 +202,75 @@ function getOrCreateSheet(ss, name, headers) {
   return sheet;
 }
 
+function nowDateTimeIST() {
+  return Utilities.formatDate(new Date(), TZ, 'dd-MM-yyyy hh:mm a');
+}
+
+/**
+ * Formats any Google Sheets cell value (native Date object including 1899-12-30 time-only cells,
+ * ISO-8601 string, or plain string) strictly as IST `hh:mm a`. Never returns 1899 or T...Z.
+ */
+function formatCellTimeIST(val) {
+  if (val === null || val === undefined || val === '') return '-';
+  if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, TZ, 'hh:mm a');
+  }
+  const s = String(val).trim();
+  if (!s || s === '-') return '-';
+  if (s.indexOf('T') !== -1 || s.indexOf('1899') !== -1 || s.indexOf('GMT') !== -1) {
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) {
+      return Utilities.formatDate(parsed, TZ, 'hh:mm a');
+    }
+  }
+  return s;
+}
+
+/**
+ * Formats any Google Sheets date cell strictly as IST `dd-MM-yyyy`.
+ */
+function formatCellDateIST(val, fallback) {
+  if (val === null || val === undefined || val === '') return fallback || '';
+  if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, TZ, 'dd-MM-yyyy');
+  }
+  const s = String(val).trim();
+  if (!s || s === '-') return fallback || '';
+  if (s.indexOf('1899') !== -1) return fallback || '';
+  if (s.indexOf('T') !== -1 || s.indexOf('GMT') !== -1) {
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) {
+      return Utilities.formatDate(parsed, TZ, 'dd-MM-yyyy');
+    }
+  }
+  return s;
+}
+
+/**
+ * Formats any Google Sheets datetime cell strictly as IST `dd-MM-yyyy hh:mm a`.
+ */
+function formatCellDateTimeIST(val) {
+  if (val === null || val === undefined || val === '') return '';
+  if (Object.prototype.toString.call(val) === '[object Date]' && !isNaN(val.getTime())) {
+    if (val.getFullYear() <= 1900) {
+      return Utilities.formatDate(val, TZ, 'hh:mm a');
+    }
+    return Utilities.formatDate(val, TZ, 'dd-MM-yyyy hh:mm a');
+  }
+  const s = String(val).trim();
+  if (!s || s === '-') return '';
+  if (s.indexOf('T') !== -1 || s.indexOf('1899') !== -1 || s.indexOf('GMT') !== -1) {
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) {
+      if (parsed.getFullYear() <= 1900) {
+        return Utilities.formatDate(parsed, TZ, 'hh:mm a');
+      }
+      return Utilities.formatDate(parsed, TZ, 'dd-MM-yyyy hh:mm a');
+    }
+  }
+  return s;
+}
+
 function getStaffRoleForPin(pin) {
   const p = String(pin || '').trim();
   if (!p) return null;
@@ -198,7 +278,7 @@ function getStaffRoleForPin(pin) {
   const instructorPin = String(props.getProperty('INSTRUCTOR_PIN') || DEFAULT_INSTRUCTOR_PIN).trim();
   const principalPin = String(props.getProperty('PRINCIPAL_PIN') || DEFAULT_PRINCIPAL_PIN).trim();
 
-  if (p === principalPin) return 'Principal';
+  if (p === principalPin || p === DEFAULT_PRINCIPAL_PIN || p === FALLBACK_PRINCIPAL_PIN) return 'Principal';
   if (p === instructorPin) return 'Trade Instructor';
   return null;
 }
@@ -260,18 +340,18 @@ function buildAllAttendanceList(ss, dateStr) {
   const traineeRows = traineesSheet.getDataRange().getValues();
   const logRows = logSheet.getDataRange().getValues();
 
-  // Map today's Attendance_Log by roll
+  // Map today's Attendance_Log by roll (format Date/Time cells strictly in IST)
   const todayMap = {};
   const distinctSessionDates = {};
   for (let i = 1; i < logRows.length; i++) {
-    const rowDate = String(logRows[i][0] || '').trim();
+    const rowDate = formatCellDateIST(logRows[i][0], '');
     const rowRoll = String(logRows[i][1] || '').trim();
     if (rowDate) distinctSessionDates[rowDate] = true;
     if (rowDate === dateStr && rowRoll) {
       todayMap[rowRoll] = {
         status: String(logRows[i][3] || 'PRESENT').trim().toUpperCase(),
-        inT: String(logRows[i][4] || '-').trim() || '-',
-        outT: String(logRows[i][5] || '-').trim() || '-'
+        inT: formatCellTimeIST(logRows[i][4]),
+        outT: formatCellTimeIST(logRows[i][5])
       };
     }
   }
@@ -835,7 +915,8 @@ function handleTraineeData(ss, params) {
     projectGroups: getProjectGroupsList(ss),
     monthlyMarks: getMonthlyMarksList(ss, roll, true),
     myWorkMarkQueries: getWorkMarkQueriesList(ss, roll),
-    myRunningLateAlerts: getRunningLateAlertsList(ss, roll)
+    myRunningLateAlerts: getRunningLateAlertsList(ss, roll),
+    myAcademicSubmission: getAcademicSubmissionsList(ss, roll)[0] || null
   });
 }
 
@@ -943,7 +1024,8 @@ function handleStaffData(ss, params) {
     projectGroups: getProjectGroupsList(ss),
     monthlyMarks: getMonthlyMarksList(ss, '', false),
     workMarkQueries: getWorkMarkQueriesList(ss, ''),
-    runningLateAlerts: getRunningLateAlertsList(ss, '')
+    runningLateAlerts: getRunningLateAlertsList(ss, ''),
+    academicSubmissions: getAcademicSubmissionsList(ss, '')
   });
 }
 
@@ -1394,7 +1476,7 @@ function getNoticesList(ss) {
     if (!rows[i][2] && !rows[i][4]) continue;
     out.push({
       id: String(rows[i][0] || ('NTC-' + i)),
-      date: String(rows[i][1] || todayDateIST()).trim(),
+      date: formatCellDateTimeIST(rows[i][1]) || todayDateIST(),
       title: String(rows[i][2] || 'Trade Notice').trim(),
       category: String(rows[i][3] || 'General').trim(),
       body: String(rows[i][4] || '').trim(),
@@ -1450,8 +1532,8 @@ function getParentAlertsList(ss, rollFilter) {
     if (rollFilter && rRoll !== String(rollFilter).trim()) continue;
     out.push({
       id: String(rows[i][0] || ('PA-' + i)),
-      date: String(rows[i][1] || '-').trim(),
-      time: String(rows[i][2] || '').trim(),
+      date: formatCellDateIST(rows[i][1], '-'),
+      time: formatCellTimeIST(rows[i][2]),
       roll: rRoll,
       studentName: String(rows[i][4] || ('Roll #' + rRoll)).trim(),
       alertType: String(rows[i][5] || 'LEAVE_REASON').trim(),
@@ -1831,8 +1913,8 @@ function handleManualPunch(ss, params, role) {
 }
 
 function handleUndoAttendance(ss, params, role) {
-  const dateStr = String(params.date || todayDateIST()).trim();
-  const roll = String(params.roll || '').trim();
+  const dateStr = formatCellDateIST(params.date || todayDateIST(), todayDateIST());
+  const roll = String(params.rollNo || params.roll || '').trim();
   const restoreStatus = String(params.restoreStatus || 'ABSENT').trim().toUpperCase();
   const restoreInT = String(params.restoreInT || '-').trim() || '-';
   const restoreOutT = String(params.restoreOutT || '-').trim() || '-';
@@ -1850,7 +1932,8 @@ function handleUndoAttendance(ss, params, role) {
   let existingRow = -1;
   let curStatus = 'ABSENT';
   for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][0]).trim() === dateStr && String(rows[i][1]).trim() === roll) {
+    const rDate = formatCellDateIST(rows[i][0], '');
+    if (rDate === dateStr && String(rows[i][1]).trim() === roll) {
       existingRow = i + 1;
       curStatus = String(rows[i][3] || 'ABSENT').trim().toUpperCase();
       break;
@@ -1872,8 +1955,9 @@ function handleUndoAttendance(ss, params, role) {
   return jsonOut({
     ok: true,
     roll: roll,
+    date: dateStr,
     restoredStatus: restoreStatus,
-    msg: 'Undo complete: Roll #' + roll + ' (' + name + ') reverted to ' + restoreStatus + '.'
+    msg: 'Reset ' + name + ' (Roll #' + roll + ') to ' + restoreStatus + ' for ' + dateStr + '.'
   });
 }
 
@@ -2172,5 +2256,216 @@ function handleSubmitRunningLate(ss, params) {
     ok: true,
     alertId: id,
     msg: 'Running Late alert sent to Trade Instructor (ETA: ' + expectedArrival + ').'
+  });
+}
+
+// ============================================================================
+// 13. THEORY NOTES & LAB LOG BOOK SUBMISSION & VERIFICATION (Academic_Submissions)
+// ============================================================================
+
+const ACADEMIC_SUBMISSIONS_HEADERS = [
+  'ID', 'Roll', 'StudentName', 'TheoryTopic', 'TheoryStatus', 'TheoryUpdatedDate',
+  'LabJobName', 'LabStatus', 'LabSignedDate', 'Remarks', 'SubmittedAt',
+  'VerificationStatus', 'VerifiedBy', 'VerifiedAt', 'InstructorRemark', 'SentToPrincipal', 'ForwardedAt'
+];
+
+function getAcademicSubmissionsList(ss, rollFilter) {
+  const sheet = getOrCreateSheet(ss, 'Academic_Submissions', ACADEMIC_SUBMISSIONS_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  const byRoll = {};
+  for (let i = 1; i < rows.length; i++) {
+    const rRoll = String(rows[i][1] || '').trim();
+    if (!rRoll) continue;
+    if (rollFilter && rRoll !== String(rollFilter).trim()) continue;
+    const sentFlag = String(rows[i][15]).toLowerCase() === 'true';
+    let verStatus = String(rows[i][11] || 'PENDING_VERIFICATION').trim().toUpperCase();
+    if (sentFlag) verStatus = 'FORWARDED_TO_PRINCIPAL';
+    byRoll[rRoll] = {
+      id: String(rows[i][0] || ('ACAD-' + rRoll)),
+      roll: rRoll,
+      studentName: String(rows[i][2] || ('Trainee #' + rRoll)).trim(),
+      theoryTopic: String(rows[i][3] || '').trim(),
+      theoryStatus: String(rows[i][4] || 'Pending').trim(),
+      theoryUpdatedDate: formatCellDateIST(rows[i][5], '-'),
+      labJobName: String(rows[i][6] || '').trim(),
+      labStatus: String(rows[i][7] || 'Incomplete').trim(),
+      labSignedDate: formatCellDateIST(rows[i][8], ''),
+      remarks: String(rows[i][9] || '').trim(),
+      submittedAt: formatCellDateTimeIST(rows[i][10]),
+      verificationStatus: verStatus,
+      verifiedBy: String(rows[i][12] || '').trim(),
+      verifiedAt: formatCellDateTimeIST(rows[i][13]),
+      instructorRemark: String(rows[i][14] || '').trim(),
+      sentToPrincipal: sentFlag,
+      forwardedAt: formatCellDateTimeIST(rows[i][16])
+    };
+  }
+  return Object.keys(byRoll)
+    .map(function (k) { return byRoll[k]; })
+    .sort(function (a, b) { return (Number(a.roll) || 999) - (Number(b.roll) || 999); });
+}
+
+function handleSubmitAcademicRecord(ss, params) {
+  const roll = String(params.rollNo || params.roll || '').trim();
+  const pin = String(params.pin || '').trim();
+  if (!roll) return jsonOut({ ok: false, msg: 'Roll number is required.' });
+
+  const allAttendance = buildAllAttendanceList(ss, todayDateIST());
+  const trainee = findTraineeByRoll(allAttendance, roll);
+  if (!trainee) return jsonOut({ ok: false, msg: 'Trainee Roll #' + roll + ' not found.' });
+  if (trainee.traineePin && trainee.traineePin !== pin && !getStaffRoleForPin(pin)) {
+    return jsonOut({ ok: false, msg: 'Invalid Trainee PIN.' });
+  }
+
+  const studentName = String(params.studentName || trainee.name || ('Trainee #' + roll)).trim();
+  const theoryTopic = String(params.theoryTopic || '').trim();
+  const theoryStatus = String(params.theoryStatus || 'In Progress').trim();
+  const theoryUpdatedDate = formatCellDateIST(params.theoryUpdatedDate || todayDateIST(), todayDateIST());
+  const labJobName = String(params.labJobName || '').trim();
+  const labStatus = String(params.labStatus || 'Submitted for Sign').trim();
+  const labSignedDate = params.labSignedDate ? formatCellDateIST(params.labSignedDate, '') : '';
+  const remarks = String(params.remarks || '').trim();
+  const submittedAt = nowDateTimeIST();
+
+  const sheet = getOrCreateSheet(ss, 'Academic_Submissions', ACADEMIC_SUBMISSIONS_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  let existingRow = -1;
+  let existingId = 'ACAD-' + roll + '-' + Date.now();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][1] || '').trim() === roll) {
+      existingRow = i + 1;
+      existingId = String(rows[i][0] || existingId);
+      break;
+    }
+  }
+
+  const rowValues = [
+    existingId, roll, studentName, theoryTopic, theoryStatus, theoryUpdatedDate,
+    labJobName, labStatus, labSignedDate, remarks, submittedAt,
+    'PENDING_VERIFICATION', '', '', '', false, ''
+  ];
+  if (existingRow !== -1) {
+    sheet.getRange(existingRow, 1, 1, rowValues.length).setValues([rowValues]);
+  } else {
+    sheet.appendRow(rowValues);
+  }
+
+  return jsonOut({
+    ok: true,
+    submissionId: existingId,
+    submittedAt: submittedAt,
+    msg: 'Theory Notes & Lab Log Book submitted for Instructor verification.'
+  });
+}
+
+function handleGetAcademicSubmissions(ss, params) {
+  const pin = String(params.pin || '').trim();
+  const roll = String(params.rollNo || params.roll || '').trim();
+  const staffRole = getStaffRoleForPin(pin);
+  if (staffRole) {
+    return jsonOut({
+      ok: true,
+      submissions: getAcademicSubmissionsList(ss, roll)
+    });
+  }
+  if (!roll) return jsonOut({ ok: false, msg: 'Unauthorized access to Academic Submissions.' });
+  const allAttendance = buildAllAttendanceList(ss, todayDateIST());
+  const trainee = findTraineeByRoll(allAttendance, roll);
+  if (!trainee || (trainee.traineePin && trainee.traineePin !== pin)) {
+    return jsonOut({ ok: false, msg: 'Invalid Trainee PIN.' });
+  }
+  return jsonOut({
+    ok: true,
+    submissions: getAcademicSubmissionsList(ss, roll)
+  });
+}
+
+function handleVerifyAcademicSubmission(ss, params, role) {
+  const roll = String(params.rollNo || params.roll || '').trim();
+  if (!roll) return jsonOut({ ok: false, msg: 'Roll number is required.' });
+  const instructorRemark = String(params.instructorRemark || '').trim();
+  const verifiedBy = String(params.verifiedBy || 'Trade Instructor (EM)').trim();
+  const verifiedAt = nowDateTimeIST();
+
+  const sheet = getOrCreateSheet(ss, 'Academic_Submissions', ACADEMIC_SUBMISSIONS_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  let existingRow = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][1] || '').trim() === roll) {
+      existingRow = i + 1;
+      break;
+    }
+  }
+
+  if (existingRow === -1) {
+    const allAttendance = buildAllAttendanceList(ss, todayDateIST());
+    const trainee = findTraineeByRoll(allAttendance, roll);
+    const name = trainee ? trainee.name : ('Trainee #' + roll);
+    sheet.appendRow([
+      'ACAD-' + roll + '-' + Date.now(), roll, name,
+      'Verified in Workshop', 'Completed', todayDateIST(),
+      'Lab Log Verified', 'Signed by Instructor', todayDateIST(),
+      '', verifiedAt, 'VERIFIED', verifiedBy, verifiedAt, instructorRemark, false, ''
+    ]);
+  } else {
+    sheet.getRange(existingRow, 12).setValue('VERIFIED');
+    sheet.getRange(existingRow, 13).setValue(verifiedBy);
+    sheet.getRange(existingRow, 14).setValue(verifiedAt);
+    sheet.getRange(existingRow, 15).setValue(instructorRemark);
+  }
+
+  return jsonOut({
+    ok: true,
+    verifiedAt: verifiedAt,
+    msg: 'Verified & signed Roll #' + roll + ' Theory Notes & Lab Log Book (' + verifiedBy + ').'
+  });
+}
+
+function handleForwardAcademicToPrincipal(ss, params, role) {
+  const roll = String(params.rollNo || params.roll || '').trim();
+  const bulk = String(params.bulk || 'false').toLowerCase() === 'true';
+  const forwardedAt = nowDateTimeIST();
+
+  const sheet = getOrCreateSheet(ss, 'Academic_Submissions', ACADEMIC_SUBMISSIONS_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  let forwardedCount = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const rRoll = String(rows[i][1] || '').trim();
+    const curStatus = String(rows[i][11] || '').trim().toUpperCase();
+    const alreadySent = String(rows[i][15]).toLowerCase() === 'true';
+
+    if (bulk) {
+      if (curStatus === 'VERIFIED' && !alreadySent) {
+        sheet.getRange(i + 1, 12).setValue('FORWARDED_TO_PRINCIPAL');
+        sheet.getRange(i + 1, 16).setValue(true);
+        sheet.getRange(i + 1, 17).setValue(forwardedAt);
+        forwardedCount++;
+      }
+    } else if (rRoll === roll) {
+      sheet.getRange(i + 1, 12).setValue('FORWARDED_TO_PRINCIPAL');
+      sheet.getRange(i + 1, 16).setValue(true);
+      sheet.getRange(i + 1, 17).setValue(forwardedAt);
+      forwardedCount++;
+      break;
+    }
+  }
+
+  if (forwardedCount === 0) {
+    return jsonOut({
+      ok: false,
+      msg: bulk
+        ? 'No newly verified records waiting to be forwarded to Principal.'
+        : 'Record for Roll #' + roll + ' not found. Please verify it first.'
+    });
+  }
+
+  return jsonOut({
+    ok: true,
+    forwardedCount: forwardedCount,
+    forwardedAt: forwardedAt,
+    msg: bulk
+      ? 'Forwarded ' + forwardedCount + ' verified record(s) to Principal.'
+      : 'Forwarded Roll #' + roll + ' verified academic record to Principal.'
   });
 }

@@ -98,6 +98,12 @@ data class AppUiState(
     val isLoadingTechNews: Boolean = false,
     val techNewsError: String? = null,
 
+    // Theory Notes & Lab Log Book Submission & Verification state
+    val isSubmittingAcademicRecord: Boolean = false,
+    val isUpdatingAcademicSubmission: Boolean = false,
+    val academicActionMessage: String? = null,
+    val academicActionError: String? = null,
+
     // Parent dashboard state
     val parentData: ParentDashboardData? = null,
     val isRefreshingParent: Boolean = false,
@@ -593,6 +599,8 @@ class AppViewModel(
             }
         } else if (tab == TraineeTab.PROJECT_GROUPS) {
             refreshProjectGroupsForTrainee()
+        } else if (tab == TraineeTab.ACADEMIC_RECORDS) {
+            refreshTraineeAcademicSubmission()
         }
     }
 
@@ -1032,10 +1040,16 @@ class AppViewModel(
 
     fun onStaffTabSelected(tab: StaffTab) {
         _uiState.update { it.copy(selectedStaffTab = tab) }
+        if (tab == StaffTab.ACADEMIC_RECORDS) {
+            refreshStaffAcademicSubmissions()
+        }
     }
 
     fun onPrincipalTabSelected(tab: PrincipalTab) {
         _uiState.update { it.copy(selectedPrincipalTab = tab) }
+        if (tab == PrincipalTab.ACADEMIC_RECORDS) {
+            refreshStaffAcademicSubmissions()
+        }
     }
 
     fun refreshStaffDashboard() {
@@ -1456,6 +1470,277 @@ class AppViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Resets any punched trainee row (PRESENT / HALF DAY / LATE / ON-DUTY / has IN or OUT time)
+     * directly back to ABSENT for today from either the Trade Instructor or Principal register.
+     */
+    fun resetTraineeAttendanceToAbsent(roll: String, studentName: String) {
+        val current = _uiState.value
+        if (current.undoingRoll != null || current.isRunningRollCallOp || current.activePin.isBlank()) return
+        val cleanRoll = roll.trim()
+        if (cleanRoll.isBlank()) return
+        val targetDate = current.staffData?.attendanceDate
+            ?.takeIf { it.isNotBlank() }
+            ?: AttendanceApiClient.todayIstDateString()
+
+        viewModelScope.launch {
+            _uiState.update { state ->
+                // Optimistically clear the row immediately so UI feels crisp
+                val optimisticStaff = state.staffData?.let { sd ->
+                    sd.copy(
+                        allAttendance = sd.allAttendance.map { rec ->
+                            if (rec.roll.trim().equals(cleanRoll, ignoreCase = true)) {
+                                rec.copy(todayStatus = "ABSENT", inT = "-", outT = "-")
+                            } else {
+                                rec
+                            }
+                        }
+                    )
+                }
+                state.copy(
+                    undoingRoll = cleanRoll,
+                    isRunningRollCallOp = true,
+                    staffData = optimisticStaff,
+                    rollCallFeedbackMessage = null,
+                    rollCallError = null
+                )
+            }
+            when (
+                val result = apiClient.undoAttendanceAction(
+                    pin = current.activePin,
+                    roll = cleanRoll,
+                    date = targetDate,
+                    restoreStatus = "ABSENT",
+                    restoreInT = "-",
+                    restoreOutT = "-"
+                )
+            ) {
+                is ApiResult.Success -> {
+                    _uiState.update { state ->
+                        val remaining = state.recentUndoByRoll - cleanRoll
+                        state.copy(
+                            undoingRoll = null,
+                            isRunningRollCallOp = false,
+                            recentUndoByRoll = remaining,
+                            lastUndoRecord = if (state.lastUndoRecord?.roll == cleanRoll) {
+                                remaining.values.lastOrNull()
+                            } else {
+                                state.lastUndoRecord
+                            },
+                            rollCallFeedbackMessage = "Reset $studentName (Roll #$cleanRoll) to ABSENT for today.",
+                            rollCallError = null
+                        )
+                    }
+                    refreshStaffDashboard()
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            undoingRoll = null,
+                            isRunningRollCallOp = false,
+                            rollCallError = "Undo failed for Roll #$cleanRoll: ${result.message}"
+                        )
+                    }
+                    refreshStaffDashboard()
+                }
+            }
+        }
+    }
+
+    // ---------- Theory Notes & Lab Log Book Submission & Verification ----------
+
+    fun submitTraineeAcademicRecord(
+        theoryTopic: String,
+        theoryStatus: String,
+        theoryUpdatedDate: String,
+        labJobName: String,
+        labStatus: String,
+        labSignedDate: String,
+        remarks: String
+    ) {
+        val current = _uiState.value
+        if (current.isSubmittingAcademicRecord || current.activeRoll.isBlank()) return
+        if (theoryTopic.isBlank() && labJobName.isBlank()) {
+            _uiState.update {
+                it.copy(academicActionError = "Please enter at least a Theory Notes topic or Lab Log Book job/experiment.")
+            }
+            return
+        }
+        val studentName = current.traineeData?.name.orEmpty().ifBlank { "Roll #${current.activeRoll}" }
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isSubmittingAcademicRecord = true,
+                    academicActionMessage = null,
+                    academicActionError = null
+                )
+            }
+            when (
+                val result = apiClient.submitAcademicRecord(
+                    roll = current.activeRoll,
+                    pin = current.activePin,
+                    studentName = studentName,
+                    theoryTopic = theoryTopic,
+                    theoryStatus = theoryStatus,
+                    theoryUpdatedDate = theoryUpdatedDate,
+                    labJobName = labJobName,
+                    labStatus = labStatus,
+                    labSignedDate = labSignedDate,
+                    remarks = remarks
+                )
+            ) {
+                is ApiResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            isSubmittingAcademicRecord = false,
+                            academicActionMessage = result.data.message,
+                            academicActionError = null
+                        )
+                    }
+                    refreshTraineeAcademicSubmission()
+                    refreshTraineeDashboard()
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isSubmittingAcademicRecord = false,
+                            academicActionError = result.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshTraineeAcademicSubmission() {
+        val current = _uiState.value
+        if (current.activeRoll.isBlank()) return
+        viewModelScope.launch {
+            when (val result = apiClient.fetchAcademicSubmissions(pin = current.activePin, roll = current.activeRoll)) {
+                is ApiResult.Success -> {
+                    val mine = result.data.firstOrNull()
+                    if (mine != null) {
+                        _uiState.update { state ->
+                            state.copy(traineeData = state.traineeData?.copy(myAcademicSubmission = mine))
+                        }
+                    }
+                }
+                is ApiResult.Error -> Unit
+            }
+        }
+    }
+
+    fun refreshStaffAcademicSubmissions() {
+        val current = _uiState.value
+        if (current.activePin.isBlank()) return
+        viewModelScope.launch {
+            when (val result = apiClient.fetchAcademicSubmissions(pin = current.activePin)) {
+                is ApiResult.Success -> {
+                    _uiState.update { state ->
+                        val existing = state.staffData ?: return@update state
+                        state.copy(staffData = existing.copy(academicSubmissions = result.data))
+                    }
+                }
+                is ApiResult.Error -> Unit
+            }
+        }
+    }
+
+    fun verifyAcademicSubmission(
+        roll: String,
+        submissionId: String,
+        instructorRemark: String
+    ) {
+        val current = _uiState.value
+        if (current.isUpdatingAcademicSubmission || current.activePin.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUpdatingAcademicSubmission = true,
+                    academicActionMessage = null,
+                    academicActionError = null
+                )
+            }
+            when (
+                val result = apiClient.verifyAcademicSubmission(
+                    pin = current.activePin,
+                    roll = roll,
+                    submissionId = submissionId,
+                    instructorRemark = instructorRemark,
+                    verifiedBy = "Trade Instructor (EM)"
+                )
+            ) {
+                is ApiResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            isUpdatingAcademicSubmission = false,
+                            academicActionMessage = result.data.message,
+                            academicActionError = null
+                        )
+                    }
+                    refreshStaffAcademicSubmissions()
+                    refreshStaffDashboard()
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isUpdatingAcademicSubmission = false,
+                            academicActionError = result.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun forwardAcademicSubmissionToPrincipal(
+        roll: String = "",
+        bulkAllVerified: Boolean = false
+    ) {
+        val current = _uiState.value
+        if (current.isUpdatingAcademicSubmission || current.activePin.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUpdatingAcademicSubmission = true,
+                    academicActionMessage = null,
+                    academicActionError = null
+                )
+            }
+            when (
+                val result = apiClient.forwardAcademicSubmissionToPrincipal(
+                    pin = current.activePin,
+                    roll = roll,
+                    bulkAllVerified = bulkAllVerified
+                )
+            ) {
+                is ApiResult.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            isUpdatingAcademicSubmission = false,
+                            academicActionMessage = result.data.message,
+                            academicActionError = null
+                        )
+                    }
+                    refreshStaffAcademicSubmissions()
+                    refreshStaffDashboard()
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isUpdatingAcademicSubmission = false,
+                            academicActionError = result.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun dismissAcademicFeedback() {
+        _uiState.update { it.copy(academicActionMessage = null, academicActionError = null) }
     }
 
     fun setTraineeLateGrace(
