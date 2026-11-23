@@ -10,6 +10,7 @@ data class DutyScheduleDay(
     val dateLabel: String,
     val firstRoll: Int,
     val secondRoll: Int,
+    val rolls: List<Int> = listOf(firstRoll, secondRoll),
     val isToday: Boolean,
     val isWeekendToday: Boolean,
     val label: String
@@ -84,13 +85,13 @@ object DutyRotationEngine {
         val cleanDate = dateDdMmYyyy.trim()
         val todayStr = AttendanceApiClient.todayIstDateString()
         val cal = istCalendar(cleanDate)
-        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-        val isSunday = dayOfWeek == Calendar.SUNDAY
+        val isSunday = cal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY
         val pair = pairForDate(cleanDate)
         return DutyScheduleDay(
             dateLabel = cleanDate,
             firstRoll = pair.first,
             secondRoll = pair.second,
+            rolls = listOf(pair.first, pair.second),
             isToday = cleanDate.equals(todayStr, ignoreCase = true),
             isWeekendToday = isSunday,
             label = formatPairLabel(pair, nameByRoll)
