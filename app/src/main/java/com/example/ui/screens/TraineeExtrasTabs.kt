@@ -786,5 +786,640 @@ fun TraineeMarksAndQueryTab(
                                 style = MaterialTheme.typography.titleSmall.copy(
                                     fontFamily = JetBrainsMonoFamily,
                                     fontWeight = FontWeight.Bold
+                                                                ),
+                                color = colors.emeraldAccent
+                            )
+                        }
+                        Text(
+                            text = "Theory: ${mark.theoryMarks}/${mark.theoryMax} • Lab: ${mark.labMarks}/${mark.labMax} • Total: ${mark.totalObtained}/${mark.totalMax}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (mark.remarks.isNotBlank()) {
+                            Text(
+                                text = "Remarks: ${mark.remarks}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textMuted
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Ask Work / Lab Mark Review",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    OutlinedTextField(
+                        value = monthLabel,
+                        onValueChange = { monthLabel = it },
+                        label = { Text("Month / Exam Label") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = workRef,
+                        onValueChange = { workRef = it },
+                        label = { Text("Lab Job / Theory Topic Reference") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = currentNote,
+                        onValueChange = { currentNote = it },
+                        label = { Text("Current Mark Note (Optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = traineeNote,
+                        onValueChange = { traineeNote = it },
+                        label = { Text("Your Question / Note for Instructor") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            if (traineeNote.isNotBlank()) {
+                                onSubmitQuery(
+                                    monthLabel.trim(),
+                                    workRef.trim(),
+                                    currentNote.trim(),
+                                    traineeNote.trim()
+                                )
+                                traineeNote = ""
+                            }
+                        },
+                        enabled = !isSubmittingQuery && traineeNote.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isSubmittingQuery) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Send Mark Query")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (workMarkQueries.isNotEmpty()) {
+            item {
+                Text(
+                    text = "My Mark Queries",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            items(workMarkQueries, key = { it.id }) { q ->
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.cardSurface,
+                    border = BorderStroke(1.dp, colors.borderSubtle),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = q.workReference.ifBlank { q.monthLabel },
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = q.status,
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                                color = colors.skyAccent
+                            )
+                        }
+                        Text(
+                            text = q.traineeNote,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (q.instructorReply.isNotBlank()) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            Text(
+                                text = "Instructor Reply: ${q.instructorReply}",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = colors.emeraldAccent
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TraineeProjectGroupsTab(
+    rollNumber: String,
+    projectGroupsEnabled: Boolean,
+    projectGroups: List<ProjectGroupEntry>,
+    isSubmittingGroup: Boolean,
+    onSaveProjectGroup: (projectTitle: String, leaderRoll: String, leaderName: String, members: String) -> Unit,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalItiColors.current
+    var title by remember { mutableStateOf("") }
+    var leaderRoll by remember { mutableStateOf(rollNumber) }
+    var leaderName by remember { mutableStateOf("") }
+    var members by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("trainee_project_groups_tab"),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Project Groups",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                OutlinedButton(onClick = onRefresh) {
+                    Text("Refresh")
+                }
+            }
+        }
+
+        if (!projectGroupsEnabled) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.amberContainer,
+                    border = BorderStroke(1.dp, colors.amberAccent.copy(alpha = 0.55f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Lock,
+                            contentDescription = null,
+                            tint = colors.amberAccent
+                        )
+                        Text(
+                            text = "Project Group submission is currently locked by the Trade Instructor.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.amberAccent
+                        )
+                    }
+                }
+            }
+        } else {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = colors.cardSurface,
+                    border = BorderStroke(1.dp, colors.borderSubtle),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "Register / Update Project Group",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = { title = it },
+                            label = { Text("Project Title") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = leaderRoll,
+                            onValueChange = { leaderRoll = it },
+                            label = { Text("Group Leader Roll #") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = leaderName,
+                            onValueChange = { leaderName = it },
+                            label = { Text("Group Leader Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = members,
+                            onValueChange = { members = it },
+                            label = { Text("Team Members (Rolls / Names)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                if (title.isNotBlank()) {
+                                    onSaveProjectGroup(
+                                        title.trim(),
+                                        leaderRoll.trim().ifBlank { rollNumber },
+                                        leaderName.trim(),
+                                        members.trim()
+                                    )
+                                    title = ""
                                 ),
+                                color = colors.emeraldAccent
+                            )
+                        }
+                        Text(
+                            text = "Theory: ${mark.theoryMarks}/${mark.theoryMax} • Lab: ${mark.labMarks}/${mark.labMax} • Total: ${mark.totalObtained}/${mark.totalMax}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (mark.remarks.isNotBlank()) {
+                            Text(
+                                text = "Remarks: ${mark.remarks}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textMuted
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Ask Work / Lab Mark Review",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    OutlinedTextField(
+                        value = monthLabel,
+                        onValueChange = { monthLabel = it },
+                        label = { Text("Month / Exam Label") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = workRef,
+                        onValueChange = { workRef = it },
+                        label = { Text("Lab Job / Theory Topic Reference") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = currentNote,
+                        onValueChange = { currentNote = it },
+                        label = { Text("Current Mark Note (Optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = traineeNote,
+                        onValueChange = { traineeNote = it },
+                        label = { Text("Your Question / Note for Instructor") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            if (traineeNote.isNotBlank()) {
+                                onSubmitQuery(
+                                    monthLabel.trim(),
+                                    workRef.trim(),
+                                    currentNote.trim(),
+                                    traineeNote.trim()
+                                )
+                                traineeNote = ""
+                            }
+                        },
+                        enabled = !isSubmittingQuery && traineeNote.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isSubmittingQuery) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Send Mark Query")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (workMarkQueries.isNotEmpty()) {
+            item {
+                Text(
+                    text = "My Mark Queries",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            items(workMarkQueries, key = { it.id }) { q ->
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.cardSurface,
+                    border = BorderStroke(1.dp, colors.borderSubtle),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = q.workReference.ifBlank { q.monthLabel },
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = q.status,
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                                color = colors.skyAccent
+                            )
+                        }
+                        Text(
+                            text = q.traineeNote,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (q.instructorReply.isNotBlank()) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            Text(
+                                text = "Instructor Reply: ${q.instructorReply}",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = colors.emeraldAccent
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TraineeProjectGroupsTab(
+    rollNumber: String,
+    projectGroupsEnabled: Boolean,
+    projectGroups: List<ProjectGroupEntry>,
+    isSubmittingGroup: Boolean,
+    onSaveProjectGroup: (projectTitle: String, leaderRoll: String, leaderName: String, members: String) -> Unit,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalItiColors.current
+    var title by remember { mutableStateOf("") }
+    var leaderRoll by remember { mutableStateOf(rollNumber) }
+    var leaderName by remember { mutableStateOf("") }
+    var members by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("trainee_project_groups_tab"),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Project Groups",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                OutlinedButton(onClick = onRefresh) {
+                    Text("Refresh")
+                }
+            }
+        }
+
+        if (!projectGroupsEnabled) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.amberContainer,
+                    border = BorderStroke(1.dp, colors.amberAccent.copy(alpha = 0.55f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Lock,
+                            contentDescription = null,
+                            tint = colors.amberAccent
+                        )
+                        Text(
+                            text = "Project Group submission is currently locked by the Trade Instructor.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.amberAccent
+                        )
+                    }
+                }
+            }
+        } else {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = colors.cardSurface,
+                    border = BorderStroke(1.dp, colors.borderSubtle),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "Register / Update Project Group",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = { title = it },
+                            label = { Text("Project Title") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = leaderRoll,
+                            onValueChange = { leaderRoll = it },
+                            label = { Text("Group Leader Roll #") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = leaderName,
+                            onValueChange = { leaderName = it },
+                            label = { Text("Group Leader Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = members,
+                            onValueChange = { members = it },
+                            label = { Text("Team Members (Rolls / Names)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                if (title.isNotBlank()) {
+                                    onSaveProjectGroup(
+                                        title.trim(),
+                                        leaderRoll.trim().ifBlank { rollNumber },
+                                        leaderName.trim(),
+                                        members.trim()
+                                    )
+                                    title = ""
+                                    members = ""
+                                }
+                            },
+                            enabled = !isSubmittingGroup && title.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (isSubmittingGroup) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(imageVector = Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Save Project Group")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        items(projectGroups, key = { it.groupId }) { group ->
+            ProjectGroupSummaryCard(group = group)
+        }
+    }
+}
+
+@Composable
+fun ProjectGroupSummaryCard(
+    group: ProjectGroupEntry,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalItiColors.current
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = colors.cardSurface),
+        border = BorderStroke(1.dp, colors.borderSubtle),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Groups,
+                        contentDescription = null,
+                        tint = colors.skyAccent
+                    )
+                    Text(
+                        text = group.projectTitle,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Text(
+                    text = group.groupId,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                    color = colors.textMuted
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Person,
+                    contentDescription = null,
+                    tint = colors.emeraldAccent,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = "Leader: Roll #${group.leaderRoll}${if (group.leaderName.isNotBlank()) " (${group.leaderName})" else ""}",
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            if (group.members.isNotBlank()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        tint = colors.skyAccent,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "Members: ${group.members}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textMuted
+                    )
+                }
+            }
+        }
+    }
+}
+
+
            
