@@ -297,7 +297,15 @@ fun DutyChartTab(
 
 @Composable
 private fun DutyScheduleRow(
-    slot: DutyPairSlot,
+    slot: DutyScheduleDay,
+    myRollNumber: Int?
+) {
+    val colors = LocalItiColors.current
+    val containsMe = myRollNumber != null && myRollNumber in slot.rolls
+    val pairLabel = slot.rolls.joinToString(" & ") { "Roll #${it.toString().padStart(2, '0')}" }
+    
+private fun DutyScheduleRow(
+        slot: DutyScheduleDay
     myRollNumber: Int?
 ) {
     val colors = LocalItiColors.current
