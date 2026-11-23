@@ -12,6 +12,9 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: iti-ranni-em
 
     steps:
       - name: Checkout repository
@@ -22,7 +25,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -56,7 +58,8 @@ jobs:
           prerelease: false
           make_latest: true
           files: |
-            app/build/outputs/apk/debug/app-debug.apk
-            version.json
+            iti-ranni-em/app/build/outputs/apk/debug/app-debug.apk
+            iti-ranni-em/version.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
