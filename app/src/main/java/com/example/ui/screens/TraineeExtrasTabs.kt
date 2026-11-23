@@ -1162,7 +1162,7 @@ fun DutyChartTab(
 }
 @Composable
 fun ProjectGroupsTab(
-    rollNumber: String,
+    rollNumber: String = "",
     projectGroupsEnabled: Boolean,
     projectGroups: List<ProjectGroupEntry>,
     isSubmittingGroup: Boolean,
