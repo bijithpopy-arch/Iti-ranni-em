@@ -1146,3 +1146,17 @@ fun ProjectGroupSummaryCard(
         }
     }
 }
+@Composable
+fun DutyChartTab(
+    myRollNumber: Int?,
+    customDutyItems: List<String> = emptyList(),
+    onRefresh: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    TraineeDutyRotationTab(
+        myRollNumber = myRollNumber,
+        customDutyItems = customDutyItems,
+        onRefresh = onRefresh,
+        modifier = modifier
+    )
+}
