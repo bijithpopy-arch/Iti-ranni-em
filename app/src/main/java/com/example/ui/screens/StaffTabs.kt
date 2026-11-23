@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
+import com.example.ui.components.InstructorTraineeRegisterRow
+import com.example.ui.components.PunchHistoryItem
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
