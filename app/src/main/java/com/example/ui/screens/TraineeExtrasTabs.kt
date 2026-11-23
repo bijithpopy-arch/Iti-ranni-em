@@ -1160,3 +1160,23 @@ fun DutyChartTab(
         modifier = modifier
     )
 }
+@Composable
+fun ProjectGroupsTab(
+    rollNumber: String,
+    projectGroupsEnabled: Boolean,
+    projectGroups: List<ProjectGroupEntry>,
+    isSubmittingGroup: Boolean,
+    onSaveProjectGroup: (projectTitle: String, leaderRoll: String, leaderName: String, members: String) -> Unit,
+    onRefresh: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    TraineeProjectGroupsTab(
+        rollNumber = rollNumber,
+        projectGroupsEnabled = projectGroupsEnabled,
+        projectGroups = projectGroups,
+        isSubmittingGroup = isSubmittingGroup,
+        onSaveProjectGroup = onSaveProjectGroup,
+        onRefresh = onRefresh,
+        modifier = modifier
+    )
+}
