@@ -18,44 +18,55 @@ data class DutyScheduleDay(
 
 object DutyRotationEngine {
 
+    const val DEFAULT_TOTAL_ROLLS = 23
     const val TOTAL_TRAINEES = 23
     const val BASE_DATE_DD_MM_YYYY = "24-11-2026"
     const val BASE_START_ROLL = 14
     private const val MS_PER_DAY = 86_400_000.0
 
+    private val istTimeZone: TimeZone
+        get() = TimeZone.getTimeZone("Asia/Kolkata")
+
+    private fun dateFormatter(): SimpleDateFormat {
+        return SimpleDateFormat("dd-MM-yyyy", Locale.US).apply {
+            timeZone = istTimeZone
+            isLenient = false
+        }
+    }
+
     private fun istCalendar(dateDdMmYyyy: String? = null): Calendar {
-        val tz = TimeZone.getTimeZone("Asia/Kolkata")
-        val cal = Calendar.getInstance(tz, Locale.US)
+        val cal = Calendar.getInstance(istTimeZone, Locale.US)
         if (!dateDdMmYyyy.isNullOrBlank()) {
-            val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.US).apply {
-                timeZone = tz
-                isLenient = false
-            }
-            sdf.parse(dateDdMmYyyy.trim())?.let { cal.time = it }
+            dateFormatter().parse(dateDdMmYyyy.trim())?.let { cal.time = it }
         }
         return cal
     }
 
-    fun wrapRoll(rollNumber: Int): Int {
-        val mod = ((rollNumber - 1) % TOTAL_TRAINEES + TOTAL_TRAINEES) % TOTAL_TRAINEES
+    fun isWeekendToday(): Boolean {
+        val day = Calendar.getInstance(istTimeZone, Locale.US).get(Calendar.DAY_OF_WEEK)
+        return day == Calendar.SUNDAY || day == Calendar.SATURDAY
+    }
+
+    fun wrapRoll(rollNumber: Int, totalRolls: Int = DEFAULT_TOTAL_ROLLS): Int {
+        val size = totalRolls.coerceAtLeast(1)
+        val mod = ((rollNumber - 1) % size + size) % size
         return mod + 1
     }
 
     fun dayOffsetFromBase(dateDdMmYyyy: String): Int {
-        val tz = TimeZone.getTimeZone("Asia/Kolkata")
-        val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.US).apply {
-            timeZone = tz
-            isLenient = false
-        }
+        val sdf = dateFormatter()
         val baseDate = sdf.parse(BASE_DATE_DD_MM_YYYY) ?: return 0
         val targetDate = sdf.parse(dateDdMmYyyy.trim()) ?: return 0
         return (((targetDate.time - baseDate.time) / MS_PER_DAY).roundToInt()).coerceAtLeast(0)
     }
 
-    fun pairForDate(dateDdMmYyyy: String = AttendanceApiClient.todayIstDateString()): Pair<Int, Int> {
+    fun pairForDate(
+        dateDdMmYyyy: String = AttendanceApiClient.todayIstDateString(),
+        totalRolls: Int = DEFAULT_TOTAL_ROLLS
+    ): Pair<Int, Int> {
         val offset = dayOffsetFromBase(dateDdMmYyyy)
-        val first = wrapRoll(BASE_START_ROLL + (offset * 2))
-        val second = wrapRoll(BASE_START_ROLL + (offset * 2) + 1)
+        val first = wrapRoll(BASE_START_ROLL + (offset * 2), totalRolls)
+        val second = wrapRoll(BASE_START_ROLL + (offset * 2) + 1, totalRolls)
         return first to second
     }
 
@@ -80,43 +91,64 @@ object DutyRotationEngine {
 
     fun dayScheduleForDate(
         dateDdMmYyyy: String,
-        nameByRoll: Map<String, String> = emptyMap()
+        totalRolls: Int = DEFAULT_TOTAL_ROLLS,
+        nameByRoll: Map<String, String> = emptyMap(),
+        customDutyItems: List<String> = emptyList()
     ): DutyScheduleDay {
         val cleanDate = dateDdMmYyyy.trim()
         val todayStr = AttendanceApiClient.todayIstDateString()
         val cal = istCalendar(cleanDate)
-        val isSunday = cal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY
-        val pair = pairForDate(cleanDate)
+        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        val isWeekend = dayOfWeek == Calendar.SUNDAY || dayOfWeek == Calendar.SATURDAY
+        val pair = pairForDate(cleanDate, totalRolls)
+        val customMatch = customDutyItems.firstOrNull { it.contains(cleanDate, ignoreCase = true) }
+        val label = customMatch ?: formatPairLabel(pair, nameByRoll)
         return DutyScheduleDay(
             dateLabel = cleanDate,
             firstRoll = pair.first,
             secondRoll = pair.second,
             rolls = listOf(pair.first, pair.second),
             isToday = cleanDate.equals(todayStr, ignoreCase = true),
-            isWeekendToday = isSunday,
-            label = formatPairLabel(pair, nameByRoll)
+            isWeekendToday = isWeekend,
+            label = label
         )
     }
 
     fun generateRotationSchedule(
+        totalRolls: Int = DEFAULT_TOTAL_ROLLS,
+        customDutyItems: List<String> = emptyList(),
         daysCount: Int = 14,
         startDateDdMmYyyy: String = AttendanceApiClient.todayIstDateString(),
         nameByRoll: Map<String, String> = emptyMap()
     ): List<DutyScheduleDay> {
         val count = daysCount.coerceAtLeast(1)
-        val tz = TimeZone.getTimeZone("Asia/Kolkata")
-        val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.US).apply {
-            timeZone = tz
-            isLenient = false
-        }
+        val sdf = dateFormatter()
         val baseCal = istCalendar(startDateDdMmYyyy)
         return buildList {
             for (i in 0 until count) {
                 val itemCal = baseCal.clone() as Calendar
                 itemCal.add(Calendar.DAY_OF_YEAR, i)
                 val labelDate = sdf.format(itemCal.time)
-                add(dayScheduleForDate(labelDate, nameByRoll))
+                add(
+                    dayScheduleForDate(
+                        dateDdMmYyyy = labelDate,
+                        totalRolls = totalRolls,
+                        nameByRoll = nameByRoll,
+                        customDutyItems = customDutyItems
+                    )
+                )
             }
         }
+    }
+
+    fun workingDaysUntilRollTurn(
+        rollNumber: Int,
+        schedule: List<DutyScheduleDay>
+    ): Int? {
+        if (rollNumber <= 0 || schedule.isEmpty()) return null
+        val index = schedule.indexOfFirst { day ->
+            !day.isWeekendToday && (day.firstRoll == rollNumber || day.secondRoll == rollNumber || rollNumber in day.rolls)
+        }
+        return if (index >= 0) index else null
     }
 }
