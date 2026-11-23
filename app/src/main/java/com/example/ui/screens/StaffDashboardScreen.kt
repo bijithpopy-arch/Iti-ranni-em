@@ -69,6 +69,10 @@ import com.example.ui.components.CheckUpdateIconButton
 import com.example.ui.components.EspStatusBadge
 import com.example.ui.components.ExternalUrlHelper
 import com.example.ui.components.TricolourRibbon
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
+import com.example.ui.components.InstructorTraineeRegisterRow
+import com.example.ui.components.PunchHistoryItem
 import com.example.ui.theme.JetBrainsMonoFamily
 import com.example.ui.theme.LocalItiColors
 import com.example.viewmodel.AppUiState
