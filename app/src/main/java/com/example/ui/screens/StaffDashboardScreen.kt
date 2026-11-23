@@ -131,6 +131,8 @@ fun StaffDashboardScreen(
         status == "PRESENT" || status.contains("HALF") || status.contains("OUT-PASS") || status == "LATE" || status == "ON-DUTY"
     }
     val attendanceClosed = uiState.staffData?.attendanceClosed ?: false
+val punchedTodayRolls = remember { mutableStateListOf<String>() }
+val historyStack = remember { mutableStateListOf<PunchHistoryItem>() }
 
     BoxWithConstraints(
         modifier = modifier
