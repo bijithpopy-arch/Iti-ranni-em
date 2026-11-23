@@ -809,6 +809,40 @@ fun TraineeDashboardScreen(
                             onRefresh = onRefresh,
                             modifier = Modifier.widthIn(max = 640.dp)
                         )
+if (showRunningLate) {
+    RunningLateDialog(
+        onDismiss = { showRunningLate = false },
+        onSubmit = { delayOrEta, reason ->
+            showRunningLate = false
+            LoudAlertAndWhatsAppHelper.playLoudAlert(context)
+            queryStatus = "Late alert prepared ($delayOrEta): $reason"
+        }
+    )
+}
+
+PrivateWorkLabMarkQueryCard(
+    isSubmitting = querySubmitting,
+    statusMessage = queryStatus,
+    onSendQuery = { subject, question ->
+        querySubmitting = true
+        scope.launch {
+            // Replace with your AttendanceApiClient call once confirmed
+            querySubmitting = false
+            queryStatus = "Query ready for instructor (${data?.roll ?: uiState.activeRoll}): $subject — $question"
+        }
+    }
+)
+
+TraineeTechNewsCard(
+    items = newsItems,
+    isLoading = newsLoading,
+    errorMessage = newsError,
+    onRefresh = {
+        newsLoading = true
+        newsError = null
+        newsLoading = false
+    }
+)
 
                         TraineeTab.DUTY_CHART -> DutyChartTab(
                             myRollNumber = (data?.roll ?: uiState.activeRoll).toIntOrNull(),
