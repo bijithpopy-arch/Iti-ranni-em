@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.ui.components.InstructorTraineeRegisterRow
+import com.example.ui.components.PunchHistoryItem
+import kotlinx.coroutines.launch
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
