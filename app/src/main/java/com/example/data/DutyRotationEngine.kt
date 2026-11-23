@@ -8,13 +8,18 @@ import kotlin.math.roundToInt
 
 data class DutyScheduleDay(
     val dateLabel: String,
+    val dateKey: String = dateLabel,
+    val dayNumber: Int = 1,
     val firstRoll: Int,
     val secondRoll: Int,
     val rolls: List<Int> = listOf(firstRoll, secondRoll),
+    val dutyItems: List<String> = emptyList(),
     val isToday: Boolean,
     val isWeekendToday: Boolean,
     val label: String
 )
+
+typealias DutyPairSlot = DutyScheduleDay
 
 object DutyRotationEngine {
 
@@ -93,7 +98,8 @@ object DutyRotationEngine {
         dateDdMmYyyy: String,
         totalRolls: Int = DEFAULT_TOTAL_ROLLS,
         nameByRoll: Map<String, String> = emptyMap(),
-        customDutyItems: List<String> = emptyList()
+        customDutyItems: List<String> = emptyList(),
+        dayNumber: Int = 1
     ): DutyScheduleDay {
         val cleanDate = dateDdMmYyyy.trim()
         val todayStr = AttendanceApiClient.todayIstDateString()
@@ -101,13 +107,22 @@ object DutyRotationEngine {
         val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
         val isWeekend = dayOfWeek == Calendar.SUNDAY || dayOfWeek == Calendar.SATURDAY
         val pair = pairForDate(cleanDate, totalRolls)
-        val customMatch = customDutyItems.firstOrNull { it.contains(cleanDate, ignoreCase = true) }
-        val label = customMatch ?: formatPairLabel(pair, nameByRoll)
+        val pairLabel = formatPairLabel(pair, nameByRoll)
+        val matchingCustom = customDutyItems.filter { it.contains(cleanDate, ignoreCase = true) }
+        val effectiveItems = if (matchingCustom.isNotEmpty()) {
+            matchingCustom
+        } else {
+            listOf("Egg & Milk Duty: $pairLabel")
+        }
+        val label = matchingCustom.firstOrNull() ?: pairLabel
         return DutyScheduleDay(
             dateLabel = cleanDate,
+            dateKey = cleanDate,
+            dayNumber = dayNumber,
             firstRoll = pair.first,
             secondRoll = pair.second,
             rolls = listOf(pair.first, pair.second),
+            dutyItems = effectiveItems,
             isToday = cleanDate.equals(todayStr, ignoreCase = true),
             isWeekendToday = isWeekend,
             label = label
@@ -134,7 +149,8 @@ object DutyRotationEngine {
                         dateDdMmYyyy = labelDate,
                         totalRolls = totalRolls,
                         nameByRoll = nameByRoll,
-                        customDutyItems = customDutyItems
+                        customDutyItems = customDutyItems,
+                        dayNumber = i + 1
                     )
                 )
             }
