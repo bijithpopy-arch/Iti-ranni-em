@@ -42,9 +42,9 @@ object AppUpdater {
     // GitHub repository for automated APK self-updates
     const val GITHUB_REPO_SLUG = "bijithpopy-arch/Iti-ranni-em"
     const val VERSION_JSON_URL =
-        "https://github.com/$GITHUB_REPO_SLUG/releases/latest/download/version.json"
+        "https://github.com/$GITHUB_REPO_SLUG/releases/download/latest/version.json"
     const val FALLBACK_APK_URL =
-        "https://github.com/$GITHUB_REPO_SLUG/releases/latest/download/app-debug.apk"
+        "https://github.com/$GITHUB_REPO_SLUG/releases/download/latest/app-debug.apk"
 
     private const val APK_FILE_NAME = "iti-ranni-em-update.apk"
 
@@ -59,10 +59,14 @@ object AppUpdater {
         versionJsonUrl: String = VERSION_JSON_URL
     ): UpdateCheckResult = withContext(Dispatchers.IO) {
         try {
+            val separator = if ("?" in versionJsonUrl) "&" else "?"
+            val requestUrl = "$versionJsonUrl${separator}t=${System.currentTimeMillis()}"
+
             val request = Request.Builder()
-                .url(versionJsonUrl)
+                .url(requestUrl)
                 .get()
                 .header("Accept", "application/json")
+                .header("Cache-Control", "no-cache")
                 .build()
 
             client.newCall(request).execute().use { response ->
