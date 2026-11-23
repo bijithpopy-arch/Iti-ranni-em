@@ -21,6 +21,9 @@
  *  - Notices         : [ID, Date, Title, Category, Body, PostedBy, Pinned]
  *  - ProjectGroups   : [GroupID, ProjectTitle, LeaderRoll, LeaderName, MembersCSV, SubmittedByRoll, CreatedAt]
  *  - Scan_Overrides  : [UpdatedAt, Early_Class_Logout, Shop_Floor_Release_Now, UpdatedBy]
+ *  - Monthly_Marks   : [ID, MonthLabel, ExamDate, Roll, StudentName, TheoryMarks, TheoryMax, LabMarks, LabMax, Remarks, Published, Revised, UpdatedAt, UpdatedBy]
+ *  - Work_Mark_Queries: [ID, Date, Time, Roll, StudentName, MonthLabel, WorkReference, CurrentMarkNote, TraineeNote, Status, InstructorReply, UpdatedAt]
+ *  - Running_Late_Alerts: [ID, Date, Time, Roll, StudentName, ExpectedArrival, ReasonCategory, Details, Status]
  */
 
 const TZ = 'Asia/Kolkata';
@@ -66,9 +69,13 @@ function doGet(e) {
       case 'verify_shop_floor_logout':
         return requireStaffPin(params, () => handleVerifyShopFloorLogout(ss, params));
 
-      // ---- Bulk Roll Call, Quick Exceptions, Late Grace, Duty Sign-Off, Tool Crib ----
+      // ---- Bulk Roll Call, Manual Punch & Undo, Quick Exceptions, Late Grace, Duty Sign-Off, Tool Crib ----
       case 'bulk_roll_call':
         return requireStaffPin(params, () => handleBulkRollCall(ss, params));
+      case 'manual_punch':
+        return requireStaffPin(params, (role) => handleManualPunch(ss, params, role));
+      case 'undo_attendance':
+        return requireStaffPin(params, (role) => handleUndoAttendance(ss, params, role));
       case 'mark_exception':
         return requireStaffPin(params, () => handleMarkException(ss, params));
       case 'set_late_grace':
@@ -77,6 +84,18 @@ function doGet(e) {
         return requireStaffPin(params, () => handleSignOffDuty(ss, params));
       case 'log_tool_crib_issue':
         return requireStaffPin(params, (role) => handleLogToolCribIssue(ss, params, role));
+
+      // ---- Monthly Theory & Lab Marks, Trainee Work/Lab Mark Queries & Running Late Alerts ----
+      case 'save_monthly_mark':
+        return requireStaffPin(params, (role) => handleSaveMonthlyMark(ss, params, role));
+      case 'submit_work_mark_query':
+        return handleSubmitWorkMarkQuery(ss, params);
+      case 'fetch_work_mark_queries':
+        return handleFetchWorkMarkQueries(ss, params);
+      case 'reply_work_mark_query':
+        return requireStaffPin(params, (role) => handleReplyWorkMarkQuery(ss, params, role));
+      case 'submit_running_late':
+        return handleSubmitRunningLate(ss, params);
 
       // ---- Confirm & Close, Holidays, Notices, Parent Alerts ----
       case 'confirm_close_attendance':
@@ -813,7 +832,10 @@ function handleTraineeData(ss, params) {
     myShopFloor: myShopFloor,
     scanOverrides: getScanOverridesState(ss),
     projectGroupsEnabled: isProjectGroupsEnabled(),
-    projectGroups: getProjectGroupsList(ss)
+    projectGroups: getProjectGroupsList(ss),
+    monthlyMarks: getMonthlyMarksList(ss, roll, true),
+    myWorkMarkQueries: getWorkMarkQueriesList(ss, roll),
+    myRunningLateAlerts: getRunningLateAlertsList(ss, roll)
   });
 }
 
@@ -862,7 +884,8 @@ function handleParentData(ss, params) {
     notices: notices,
     pinnedBroadcast: pinnedBroadcast,
     wardShopFloor: wardShopFloor,
-    parentAlerts: getParentAlertsList(ss, roll)
+    parentAlerts: getParentAlertsList(ss, roll),
+    monthlyMarks: getMonthlyMarksList(ss, roll, true)
   });
 }
 
@@ -917,7 +940,10 @@ function handleStaffData(ss, params) {
     todayDutySignOff: getTodayDutySignOff(ss, dateStr),
     lastScannerSync: lastSync,
     projectGroupsEnabled: isProjectGroupsEnabled(),
-    projectGroups: getProjectGroupsList(ss)
+    projectGroups: getProjectGroupsList(ss),
+    monthlyMarks: getMonthlyMarksList(ss, '', false),
+    workMarkQueries: getWorkMarkQueriesList(ss, ''),
+    runningLateAlerts: getRunningLateAlertsList(ss, '')
   });
 }
 
@@ -1690,5 +1716,461 @@ function handlePrintAttendancePdf(ss) {
     ok: true,
     pdfUrl: pdfUrl,
     msg: 'Official Govt. ITI Ranni Attendance Register PDF generated.'
+  });
+}
+
+// ============================================================================
+// 9. INSTRUCTOR MANUAL PUNCH (DUPLICATE GUARD + OVERRIDE) & UNDO ATTENDANCE
+// ============================================================================
+
+function statusBucket(st) {
+  const s = String(st || '').trim().toUpperCase();
+  if (s.indexOf('HALF') !== -1) return 'HALF';
+  if (s === 'PRESENT' || s === 'LATE' || s === 'ON-DUTY' || s === 'OUT-PASS') return 'PRESENT';
+  return 'ABSENT';
+}
+
+function reconcileTraineeTotalsDelta(ss, trainee, oldStatus, newStatus, hadExistingRow) {
+  if (!trainee || !trainee.rowIndex) return;
+  const sheet = ss.getSheetByName('Trainees');
+  if (!sheet) return;
+  let p = Math.max(0, Number(sheet.getRange(trainee.rowIndex, 5).getValue()) || 0);
+  let h = Math.max(0, Number(sheet.getRange(trainee.rowIndex, 6).getValue()) || 0);
+  let t = Math.max(0, Number(sheet.getRange(trainee.rowIndex, 7).getValue()) || 0);
+
+  const oldB = hadExistingRow ? statusBucket(oldStatus) : 'ABSENT';
+  const newB = statusBucket(newStatus);
+
+  if (oldB === newB) return;
+
+  if (oldB === 'PRESENT') p = Math.max(0, p - 1);
+  if (oldB === 'HALF') h = Math.max(0, h - 1);
+
+  if (newB === 'PRESENT') p += 1;
+  if (newB === 'HALF') h += 1;
+
+  sheet.getRange(trainee.rowIndex, 5).setValue(p);
+  sheet.getRange(trainee.rowIndex, 6).setValue(h);
+  sheet.getRange(trainee.rowIndex, 7).setValue(Math.max(t, p + h));
+}
+
+function handleManualPunch(ss, params, role) {
+  const dateStr = String(params.date || todayDateIST()).trim();
+  const roll = String(params.roll || '').trim();
+  const status = String(params.status || 'PRESENT').trim().toUpperCase();
+  const allowDuplicate = String(params.allowDuplicate || 'false').trim().toLowerCase() === 'true';
+  const note = String(params.note || '').trim();
+  const timeStr = nowTimeIST();
+
+  if (!roll) return jsonOut({ ok: false, msg: 'Roll number is required.' });
+
+  const allAttendance = buildAllAttendanceList(ss, dateStr);
+  const trainee = findTraineeByRoll(allAttendance, roll);
+  const name = trainee ? trainee.name : ('Trainee #' + roll);
+
+  const logSheet = getOrCreateSheet(ss, 'Attendance_Log', [
+    'Date', 'Roll', 'Name', 'Status', 'In_Time', 'Out_Time', 'Notes'
+  ]);
+  const rows = logSheet.getDataRange().getValues();
+  let existingRow = -1;
+  let prevStatus = 'ABSENT';
+  let prevInT = '-';
+  let prevOutT = '-';
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === dateStr && String(rows[i][1]).trim() === roll) {
+      existingRow = i + 1;
+      prevStatus = String(rows[i][3] || 'ABSENT').trim().toUpperCase();
+      prevInT = String(rows[i][4] || '-').trim() || '-';
+      prevOutT = String(rows[i][5] || '-').trim() || '-';
+      break;
+    }
+  }
+
+  const alreadyPunchedToday = existingRow !== -1 && (
+    statusBucket(prevStatus) !== 'ABSENT' || (prevInT !== '-' && prevInT !== '')
+  );
+
+  if (alreadyPunchedToday && !allowDuplicate) {
+    return jsonOut({
+      ok: false,
+      duplicateBlocked: true,
+      existingStatus: prevStatus,
+      existingInTime: prevInT,
+      msg: 'Roll #' + roll + ' (' + name + ') already punched today as ' + prevStatus +
+        (prevInT !== '-' ? ' at ' + prevInT : '') + '. Confirm "Mark again (by mistake)" to override.'
+    });
+  }
+
+  const tag = note
+    ? ('Manual Punch (' + role + '): ' + note)
+    : (allowDuplicate ? ('Manual Override (' + role + ')') : ('Manual Punch (' + role + ')'));
+
+  if (existingRow !== -1) {
+    const newInT = (status === 'ABSENT') ? '-' : (prevInT !== '-' ? prevInT : timeStr);
+    logSheet.getRange(existingRow, 4).setValue(status);
+    logSheet.getRange(existingRow, 5).setValue(newInT);
+    logSheet.getRange(existingRow, 7).setValue(tag);
+    reconcileTraineeTotalsDelta(ss, trainee, prevStatus, status, true);
+  } else {
+    const newInT = (status === 'ABSENT') ? '-' : timeStr;
+    logSheet.appendRow([dateStr, roll, name, status, newInT, '-', tag]);
+    reconcileTraineeTotalsDelta(ss, trainee, 'ABSENT', status, false);
+  }
+
+  return jsonOut({
+    ok: true,
+    roll: roll,
+    status: status,
+    previousStatus: prevStatus,
+    previousInT: prevInT,
+    previousOutT: prevOutT,
+    time: timeStr,
+    msg: (allowDuplicate ? 'Override saved: ' : 'Manual punch saved: ') +
+      'Roll #' + roll + ' (' + name + ') marked ' + status + ' at ' + timeStr + '.'
+  });
+}
+
+function handleUndoAttendance(ss, params, role) {
+  const dateStr = String(params.date || todayDateIST()).trim();
+  const roll = String(params.roll || '').trim();
+  const restoreStatus = String(params.restoreStatus || 'ABSENT').trim().toUpperCase();
+  const restoreInT = String(params.restoreInT || '-').trim() || '-';
+  const restoreOutT = String(params.restoreOutT || '-').trim() || '-';
+
+  if (!roll) return jsonOut({ ok: false, msg: 'Roll number is required for Undo.' });
+
+  const allAttendance = buildAllAttendanceList(ss, dateStr);
+  const trainee = findTraineeByRoll(allAttendance, roll);
+  const name = trainee ? trainee.name : ('Trainee #' + roll);
+
+  const logSheet = getOrCreateSheet(ss, 'Attendance_Log', [
+    'Date', 'Roll', 'Name', 'Status', 'In_Time', 'Out_Time', 'Notes'
+  ]);
+  const rows = logSheet.getDataRange().getValues();
+  let existingRow = -1;
+  let curStatus = 'ABSENT';
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === dateStr && String(rows[i][1]).trim() === roll) {
+      existingRow = i + 1;
+      curStatus = String(rows[i][3] || 'ABSENT').trim().toUpperCase();
+      break;
+    }
+  }
+
+  if (existingRow !== -1) {
+    reconcileTraineeTotalsDelta(ss, trainee, curStatus, restoreStatus, true);
+    if (restoreStatus === 'ABSENT' && (restoreInT === '-' || restoreInT === '')) {
+      logSheet.deleteRow(existingRow);
+    } else {
+      logSheet.getRange(existingRow, 4).setValue(restoreStatus);
+      logSheet.getRange(existingRow, 5).setValue(restoreInT);
+      logSheet.getRange(existingRow, 6).setValue(restoreOutT);
+      logSheet.getRange(existingRow, 7).setValue('Undo by ' + role + ' at ' + nowTimeIST());
+    }
+  }
+
+  return jsonOut({
+    ok: true,
+    roll: roll,
+    restoredStatus: restoreStatus,
+    msg: 'Undo complete: Roll #' + roll + ' (' + name + ') reverted to ' + restoreStatus + '.'
+  });
+}
+
+// ============================================================================
+// 10. MONTHLY THEORY & LAB MARKS (EDITABLE + PARENT NOTIFICATION)
+// ============================================================================
+
+function getMonthlyMarksList(ss, rollFilter, publishedOnly) {
+  const sheet = getOrCreateSheet(ss, 'Monthly_Marks', [
+    'ID', 'MonthLabel', 'ExamDate', 'Roll', 'StudentName', 'TheoryMarks', 'TheoryMax',
+    'LabMarks', 'LabMax', 'Remarks', 'Published', 'Revised', 'UpdatedAt', 'UpdatedBy'
+  ]);
+  const rows = sheet.getDataRange().getValues();
+  const out = [];
+  for (let i = rows.length - 1; i >= 1; i--) {
+    const rRoll = String(rows[i][3] || '').trim();
+    if (!rRoll) continue;
+    if (rollFilter && rRoll !== String(rollFilter).trim()) continue;
+    const isPub = String(rows[i][10]).toLowerCase() !== 'false';
+    if (publishedOnly && !isPub) continue;
+    out.push({
+      id: String(rows[i][0] || ('MK-' + i)),
+      monthLabel: String(rows[i][1] || 'Monthly Exam').trim(),
+      examDate: String(rows[i][2] || '').trim(),
+      roll: rRoll,
+      studentName: String(rows[i][4] || ('Trainee #' + rRoll)).trim(),
+      theoryMarks: Math.max(0, Number(rows[i][5]) || 0),
+      theoryMax: Math.max(1, Number(rows[i][6]) || 50),
+      labMarks: Math.max(0, Number(rows[i][7]) || 0),
+      labMax: Math.max(1, Number(rows[i][8]) || 50),
+      remarks: String(rows[i][9] || '').trim(),
+      published: isPub,
+      isRevised: String(rows[i][11]).toLowerCase() === 'true',
+      updatedAt: String(rows[i][12] || '').trim()
+    });
+  }
+  return out;
+}
+
+function handleSaveMonthlyMark(ss, params, role) {
+  const markId = String(params.markId || '').trim();
+  const roll = String(params.roll || '').trim();
+  const monthLabel = String(params.monthLabel || '').trim();
+  const examDate = String(params.examDate || todayDateIST()).trim();
+  const theoryMarks = Math.max(0, Number(params.theoryMarks) || 0);
+  const theoryMax = Math.max(1, Number(params.theoryMax) || 50);
+  const labMarks = Math.max(0, Number(params.labMarks) || 0);
+  const labMax = Math.max(1, Number(params.labMax) || 50);
+  const remarks = String(params.remarks || '').trim();
+  const publish = String(params.publish || 'true').toLowerCase() !== 'false';
+  const notifyParent = String(params.notifyParent || 'true').toLowerCase() !== 'false';
+
+  if (!roll || !monthLabel) {
+    return jsonOut({ ok: false, msg: 'Roll number and month label are required.' });
+  }
+
+  const allAttendance = buildAllAttendanceList(ss, todayDateIST());
+  const trainee = findTraineeByRoll(allAttendance, roll);
+  const studentName = trainee ? trainee.name : ('Trainee #' + roll);
+  const updatedAt = todayDateIST() + ' ' + nowTimeIST();
+
+  const sheet = getOrCreateSheet(ss, 'Monthly_Marks', [
+    'ID', 'MonthLabel', 'ExamDate', 'Roll', 'StudentName', 'TheoryMarks', 'TheoryMax',
+    'LabMarks', 'LabMax', 'Remarks', 'Published', 'Revised', 'UpdatedAt', 'UpdatedBy'
+  ]);
+  const rows = sheet.getDataRange().getValues();
+  let existingRow = -1;
+  let resolvedId = markId;
+
+  for (let i = 1; i < rows.length; i++) {
+    const rowId = String(rows[i][0] || '').trim();
+    const rowMonth = String(rows[i][1] || '').trim().toLowerCase();
+    const rowRoll = String(rows[i][3] || '').trim();
+    if ((markId && rowId === markId) || (rowRoll === roll && rowMonth === monthLabel.toLowerCase())) {
+      existingRow = i + 1;
+      resolvedId = rowId || ('MK-' + Date.now());
+      break;
+    }
+  }
+
+  const isEdit = existingRow !== -1;
+  if (isEdit) {
+    sheet.getRange(existingRow, 2, 1, 13).setValues([[
+      monthLabel, examDate, roll, studentName, theoryMarks, theoryMax,
+      labMarks, labMax, remarks, publish, true, updatedAt, role
+    ]]);
+  } else {
+    resolvedId = 'MK-' + Date.now();
+    sheet.appendRow([
+      resolvedId, monthLabel, examDate, roll, studentName, theoryMarks, theoryMax,
+      labMarks, labMax, remarks, publish, false, updatedAt, role
+    ]);
+  }
+
+  // Trigger Parent notification in Parent_Alerts when published & notifyParent is enabled
+  if (publish && notifyParent) {
+    const totalGot = theoryMarks + labMarks;
+    const totalMax = theoryMax + labMax;
+    const pct = totalMax > 0 ? Math.round((totalGot / totalMax) * 100) : 0;
+    const alertType = isEdit ? 'MARKS_UPDATED' : 'MARKS_PUBLISHED';
+    const alertMsg = (isEdit ? 'Updated ' : 'Published ') + monthLabel + ' marks for ' + studentName +
+      ': Theory ' + theoryMarks + '/' + theoryMax + ', Lab ' + labMarks + '/' + labMax +
+      ' (Total ' + totalGot + '/' + totalMax + ' — ' + pct + '%).' +
+      (remarks ? ' Remarks: ' + remarks : '');
+    const paSheet = getOrCreateSheet(ss, 'Parent_Alerts', ['ID', 'Date', 'Time', 'Roll', 'StudentName', 'AlertType', 'Message']);
+    paSheet.appendRow(['PA-MK-' + Date.now(), todayDateIST(), nowTimeIST(), roll, studentName, alertType, alertMsg]);
+  }
+
+  return jsonOut({
+    ok: true,
+    markId: resolvedId,
+    isRevised: isEdit,
+    msg: (isEdit ? 'Updated ' : 'Published ') + monthLabel + ' Theory & Lab marks for Roll #' + roll + ' (' + studentName + ')' +
+      (publish && notifyParent ? ' — Parent notified.' : '.')
+  });
+}
+
+// ============================================================================
+// 11. TRAINEE-ONLY WORK / LAB MARK QUERIES (PRIVATE TO TRAINEE & INSTRUCTOR)
+// ============================================================================
+
+function getWorkMarkQueriesList(ss, rollFilter) {
+  const sheet = getOrCreateSheet(ss, 'Work_Mark_Queries', [
+    'ID', 'Date', 'Time', 'Roll', 'StudentName', 'MonthLabel', 'WorkReference',
+    'CurrentMarkNote', 'TraineeNote', 'Status', 'InstructorReply', 'UpdatedAt'
+  ]);
+  const rows = sheet.getDataRange().getValues();
+  const out = [];
+  for (let i = rows.length - 1; i >= 1 && out.length < 100; i--) {
+    const rRoll = String(rows[i][3] || '').trim();
+    if (!rRoll) continue;
+    if (rollFilter && rRoll !== String(rollFilter).trim()) continue;
+    out.push({
+      id: String(rows[i][0] || ('WMQ-' + i)),
+      date: String(rows[i][1] || '').trim(),
+      time: String(rows[i][2] || '').trim(),
+      roll: rRoll,
+      studentName: String(rows[i][4] || ('Trainee #' + rRoll)).trim(),
+      monthLabel: String(rows[i][5] || '').trim(),
+      workReference: String(rows[i][6] || 'Workshop / Lab Practical').trim(),
+      currentMarkNote: String(rows[i][7] || '').trim(),
+      traineeNote: String(rows[i][8] || '').trim(),
+      status: String(rows[i][9] || 'OPEN').trim().toUpperCase(),
+      instructorReply: String(rows[i][10] || '').trim(),
+      updatedAt: String(rows[i][11] || '').trim()
+    });
+  }
+  return out;
+}
+
+function handleSubmitWorkMarkQuery(ss, params) {
+  const roll = String(params.roll || '').trim();
+  const pin = String(params.pin || '').trim();
+  const monthLabel = String(params.monthLabel || '').trim();
+  const workReference = String(params.workReference || '').trim();
+  const currentMarkNote = String(params.currentMarkNote || '').trim();
+  const traineeNote = String(params.traineeNote || '').trim();
+
+  if (!roll || !traineeNote) {
+    return jsonOut({ ok: false, msg: 'Roll number and query message are required.' });
+  }
+
+  const allAttendance = buildAllAttendanceList(ss, todayDateIST());
+  const trainee = findTraineeByRoll(allAttendance, roll);
+  if (!trainee) return jsonOut({ ok: false, msg: 'Trainee Roll #' + roll + ' not found.' });
+  if (trainee.traineePin && trainee.traineePin !== pin) {
+    return jsonOut({ ok: false, msg: 'Invalid Trainee PIN. Only the trainee can submit Work / Lab Mark queries.' });
+  }
+
+  const sheet = getOrCreateSheet(ss, 'Work_Mark_Queries', [
+    'ID', 'Date', 'Time', 'Roll', 'StudentName', 'MonthLabel', 'WorkReference',
+    'CurrentMarkNote', 'TraineeNote', 'Status', 'InstructorReply', 'UpdatedAt'
+  ]);
+  const id = 'WMQ-' + Date.now();
+  const dateStr = todayDateIST();
+  const timeStr = nowTimeIST();
+  sheet.appendRow([
+    id, dateStr, timeStr, roll, trainee.name, monthLabel,
+    workReference || 'Workshop / Lab Practical', currentMarkNote, traineeNote,
+    'OPEN', '', dateStr + ' ' + timeStr
+  ]);
+
+  return jsonOut({
+    ok: true,
+    queryId: id,
+    msg: 'Private Work / Lab mark query sent to your Trade Instructor.'
+  });
+}
+
+function handleFetchWorkMarkQueries(ss, params) {
+  const pin = String(params.pin || '').trim();
+  const roll = String(params.roll || '').trim();
+  const staffRole = getStaffRoleForPin(pin);
+  if (staffRole) {
+    return jsonOut({
+      ok: true,
+      workMarkQueries: getWorkMarkQueriesList(ss, roll)
+    });
+  }
+  if (!roll) {
+    return jsonOut({ ok: false, msg: 'Unauthorized query access.' });
+  }
+  const allAttendance = buildAllAttendanceList(ss, todayDateIST());
+  const trainee = findTraineeByRoll(allAttendance, roll);
+  if (!trainee || (trainee.traineePin && trainee.traineePin !== pin)) {
+    return jsonOut({ ok: false, msg: 'Invalid Trainee PIN.' });
+  }
+  return jsonOut({
+    ok: true,
+    myWorkMarkQueries: getWorkMarkQueriesList(ss, roll)
+  });
+}
+
+function handleReplyWorkMarkQuery(ss, params, role) {
+  const queryId = String(params.queryId || '').trim();
+  const status = String(params.status || 'REVIEWED').trim().toUpperCase();
+  const reply = String(params.reply || '').trim();
+  if (!queryId) return jsonOut({ ok: false, msg: 'Query ID is required.' });
+
+  const sheet = getOrCreateSheet(ss, 'Work_Mark_Queries', [
+    'ID', 'Date', 'Time', 'Roll', 'StudentName', 'MonthLabel', 'WorkReference',
+    'CurrentMarkNote', 'TraineeNote', 'Status', 'InstructorReply', 'UpdatedAt'
+  ]);
+  const rows = sheet.getDataRange().getValues();
+  const updatedAt = todayDateIST() + ' ' + nowTimeIST();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === queryId) {
+      sheet.getRange(i + 1, 10).setValue(status);
+      sheet.getRange(i + 1, 11).setValue(reply);
+      sheet.getRange(i + 1, 12).setValue(updatedAt);
+      return jsonOut({
+        ok: true,
+        msg: 'Reply saved (' + status + ') for Work / Lab mark query ' + queryId + ' by ' + role + '.'
+      });
+    }
+  }
+  return jsonOut({ ok: false, msg: 'Work / Lab mark query ' + queryId + ' not found.' });
+}
+
+// ============================================================================
+// 12. TRAINEE "RUNNING LATE" ALERTS TO TRADE INSTRUCTOR
+// ============================================================================
+
+function getRunningLateAlertsList(ss, rollFilter) {
+  const sheet = getOrCreateSheet(ss, 'Running_Late_Alerts', [
+    'ID', 'Date', 'Time', 'Roll', 'StudentName', 'ExpectedArrival', 'ReasonCategory', 'Details', 'Status'
+  ]);
+  const rows = sheet.getDataRange().getValues();
+  const out = [];
+  for (let i = rows.length - 1; i >= 1 && out.length < 60; i--) {
+    const rRoll = String(rows[i][3] || '').trim();
+    if (!rRoll) continue;
+    if (rollFilter && rRoll !== String(rollFilter).trim()) continue;
+    out.push({
+      id: String(rows[i][0] || ('RL-' + i)),
+      date: String(rows[i][1] || '').trim(),
+      time: String(rows[i][2] || '').trim(),
+      roll: rRoll,
+      studentName: String(rows[i][4] || ('Trainee #' + rRoll)).trim(),
+      expectedArrival: String(rows[i][5] || '').trim(),
+      reasonCategory: String(rows[i][6] || 'Delay').trim(),
+      details: String(rows[i][7] || '').trim(),
+      status: String(rows[i][8] || 'ACTIVE').trim().toUpperCase()
+    });
+  }
+  return out;
+}
+
+function handleSubmitRunningLate(ss, params) {
+  const roll = String(params.roll || '').trim();
+  const pin = String(params.pin || '').trim();
+  const expectedArrival = String(params.expectedArrival || '').trim();
+  const reasonCategory = String(params.reasonCategory || 'Bus / Transport Delay').trim();
+  const details = String(params.details || '').trim();
+
+  if (!roll || !expectedArrival) {
+    return jsonOut({ ok: false, msg: 'Roll number and expected arrival / delay window are required.' });
+  }
+
+  const allAttendance = buildAllAttendanceList(ss, todayDateIST());
+  const trainee = findTraineeByRoll(allAttendance, roll);
+  if (!trainee) return jsonOut({ ok: false, msg: 'Trainee Roll #' + roll + ' not found.' });
+  if (trainee.traineePin && trainee.traineePin !== pin) {
+    return jsonOut({ ok: false, msg: 'Invalid Trainee PIN.' });
+  }
+
+  const sheet = getOrCreateSheet(ss, 'Running_Late_Alerts', [
+    'ID', 'Date', 'Time', 'Roll', 'StudentName', 'ExpectedArrival', 'ReasonCategory', 'Details', 'Status'
+  ]);
+  const id = 'RL-' + Date.now();
+  const dateStr = todayDateIST();
+  const timeStr = nowTimeIST();
+  sheet.appendRow([id, dateStr, timeStr, roll, trainee.name, expectedArrival, reasonCategory, details, 'ACTIVE']);
+
+  return jsonOut({
+    ok: true,
+    alertId: id,
+    msg: 'Running Late alert sent to Trade Instructor (ETA: ' + expectedArrival + ').'
   });
 }
