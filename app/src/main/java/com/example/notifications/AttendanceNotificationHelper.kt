@@ -155,8 +155,35 @@ object AttendanceNotificationHelper {
             // Permission revoked at runtime
         }
     }
+} catch (_: SecurityException) {
+            // Permission revoked at runtime
+        }
+    }
+
+    fun playLoudAlertTone(context: Context) {
+        val soundUri = getSelectedSoundUri(context)
+        runCatching {
+            val ringtone = RingtoneManager.getRingtone(context.applicationContext, soundUri)
+            if (ringtone != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    ringtone.volume = 1.0f
+                }
+                ringtone.audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                ringtone.play()
+            }
+        }.onFailure {
+            runCatching {
+                val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                RingtoneManager.getRingtone(context.applicationContext, fallback)?.play()
+            }
+        }
+    }
 
     // ---------- Notice Read/Unread Helpers ----------
+
 
     private fun extractStringProp(obj: Any?, getterName: String): String? {
         if (obj == null) return null
