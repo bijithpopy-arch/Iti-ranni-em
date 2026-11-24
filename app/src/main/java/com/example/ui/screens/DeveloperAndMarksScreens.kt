@@ -72,8 +72,7 @@ fun ReportBugButtonAndDialog(
 fun DeveloperMasterPanel(
     appConfig: RemoteAppConfig,
     uiConfig: RemoteUiConfig,
-        bugList: List>,
-
+    bugList: List<Map<String, String>>,
     onSaveAppConfig: (Map<String, String>) -> Unit,
     onSaveUiConfig: (Map<String, String>, String) -> Unit,
     onResolveBug: (bugId: String, reply: String) -> Unit,
@@ -94,9 +93,8 @@ fun DeveloperMasterPanel(
 
         when (selectedTab) {
             0 -> {
-                var updater by remember(appConfig) { mutableStateOf(appConfig.updaterEnabled) }                
+                var updater by remember(appConfig) { mutableStateOf(appConfig.updaterEnabled) }
                 var releaseToUsers by remember(appConfig) { mutableStateOf(appConfig.releaseUpdateToUsers) }
-
                 var instAccess by remember(appConfig) { mutableStateOf(appConfig.instructorAccessEnabled) }
                 var prinAccess by remember(appConfig) { mutableStateOf(appConfig.principalAccessEnabled) }
                 var maintMode by remember(appConfig) { mutableStateOf(appConfig.maintenanceMode) }
@@ -105,8 +103,7 @@ fun DeveloperMasterPanel(
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item {
-                                                SwitchRow("Release Update Popup to Users", releaseToUsers) { releaseToUsers = it }
-                                                
+                        SwitchRow("Release Update Popup to Users", releaseToUsers) { releaseToUsers = it }
                         SwitchRow("In-App Updater Enabled", updater) { updater = it }
                         SwitchRow("Instructor (2025) Admin Access", instAccess) { instAccess = it }
                         SwitchRow("Principal (9999) Admin Access", prinAccess) { prinAccess = it }
@@ -135,8 +132,7 @@ fun DeveloperMasterPanel(
                                 onSaveAppConfig(
                                     mapOf(
                                         "updaterEnabled" to updater.toString(),
-                                                                                "releaseUpdateToUsers" to releaseToUsers.toString(),
-                                        
+                                        "releaseUpdateToUsers" to releaseToUsers.toString(),
                                         "instructorAccessEnabled" to instAccess.toString(),
                                         "principalAccessEnabled" to prinAccess.toString(),
                                         "maintenanceMode" to maintMode.toString(),
