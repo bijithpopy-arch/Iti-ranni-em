@@ -144,9 +144,10 @@ fun ItiAttendanceApp(
         viewModel.checkForAppUpdate(silentIfUpToDate = true)
     }
 
-    val remoteAppConfig = remember(uiState) { RemoteAppConfig() }
-    val remoteUiConfig = remember(uiState) { RemoteUiConfig() }
-    val bugList = remember(uiState) { emptyList>() }
+        val remoteAppConfig: RemoteAppConfig = uiState.remoteAppConfig
+    val remoteUiConfig: RemoteUiConfig = uiState.remoteUiConfig
+    val bugList: List> = uiState.bugReports
+
     val packageVersionName = remember(context) {
         try {
             val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
