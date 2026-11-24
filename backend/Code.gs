@@ -83,6 +83,15 @@ function doGet(e) {
         return requireStaffPin(params, (role) => handleSetLateGrace(ss, params, role));
       case 'sign_off_duty':
         return requireStaffPin(params, () => handleSignOffDuty(ss, params));
+      case 'savedutyoverride':
+      case 'save_duty_override':
+        return requireStaffPin(params, (role) => handleSaveDutyOverride(ss, params, role));
+      case 'savetimetable':
+      case 'save_timetable':
+        return handleSaveTimetable(ss, params);
+      case 'gettimetable':
+      case 'get_timetable':
+        return handleGetTimetable(ss, params);
       case 'log_tool_crib_issue':
         return requireStaffPin(params, (role) => handleLogToolCribIssue(ss, params, role));
 
@@ -916,7 +925,10 @@ function handleTraineeData(ss, params) {
     monthlyMarks: getMonthlyMarksList(ss, roll, true),
     myWorkMarkQueries: getWorkMarkQueriesList(ss, roll),
     myRunningLateAlerts: getRunningLateAlertsList(ss, roll),
-    myAcademicSubmission: getAcademicSubmissionsList(ss, roll)[0] || null
+    myAcademicSubmission: getAcademicSubmissionsList(ss, roll)[0] || null,
+    dutyOverrides: getDutyOverridesMap(ss),
+    timetable: getTimetableList(ss),
+    traineeTimetableEditEnabled: isTraineeTimetableEditEnabled()
   });
 }
 
@@ -1025,7 +1037,10 @@ function handleStaffData(ss, params) {
     monthlyMarks: getMonthlyMarksList(ss, '', false),
     workMarkQueries: getWorkMarkQueriesList(ss, ''),
     runningLateAlerts: getRunningLateAlertsList(ss, ''),
-    academicSubmissions: getAcademicSubmissionsList(ss, '')
+    academicSubmissions: getAcademicSubmissionsList(ss, ''),
+    dutyOverrides: getDutyOverridesMap(ss),
+    timetable: getTimetableList(ss),
+    traineeTimetableEditEnabled: isTraineeTimetableEditEnabled()
   });
 }
 
@@ -2467,5 +2482,194 @@ function handleForwardAcademicToPrincipal(ss, params, role) {
     msg: bulk
       ? 'Forwarded ' + forwardedCount + ' verified record(s) to Principal.'
       : 'Forwarded Roll #' + roll + ' verified academic record to Principal.'
+  });
+}
+
+// ============================================================================
+// 11. LIVE DUTY OVERRIDES (ROLLS 1-23) & EDITABLE WEEKLY TIMETABLE
+// ============================================================================
+
+const DUTY_OVERRIDES_HEADERS = [
+  'DateKey', 'FirstRoll', 'SecondRoll', 'DutyNote', 'ReanchorFromHere', 'UpdatedBy', 'UpdatedAt'
+];
+
+const TIMETABLE_HEADERS = [
+  'ID', 'DayOfWeek', 'StartTime', 'EndTime', 'Subject', 'SessionType', 'RoomOrNote', 'UpdatedBy'
+];
+
+function getDutyOverridesMap(ss) {
+  const sheet = getOrCreateSheet(ss, 'Duty_Overrides', DUTY_OVERRIDES_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  const map = {};
+  for (let i = 1; i < rows.length; i++) {
+    const dateKey = formatCellDateIST(rows[i][0], '');
+    const r1 = Math.floor(Number(rows[i][1]) || 0);
+    const r2 = Math.floor(Number(rows[i][2]) || 0);
+    if (!dateKey || r1 < 1 || r1 > 23 || r2 < 1 || r2 > 23) continue;
+    map[dateKey] = {
+      dateKey: dateKey,
+      firstRoll: r1,
+      secondRoll: r2,
+      dutyNote: String(rows[i][3] || '').trim(),
+      reanchorFromHere: String(rows[i][4]).toLowerCase() === 'true',
+      updatedBy: String(rows[i][5] || 'Trade Instructor').trim(),
+      updatedAt: formatCellDateTimeIST(rows[i][6])
+    };
+  }
+  return map;
+}
+
+function handleSaveDutyOverride(ss, params, role) {
+  const dateKey = formatCellDateIST(params.dateKey || params.date || todayDateIST(), todayDateIST());
+  const resetToAuto = String(params.resetToAuto || 'false').toLowerCase() === 'true';
+  const sheet = getOrCreateSheet(ss, 'Duty_Overrides', DUTY_OVERRIDES_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+
+  if (resetToAuto) {
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (formatCellDateIST(rows[i][0], '') === dateKey) {
+        sheet.deleteRow(i + 1);
+      }
+    }
+    return jsonOut({
+      ok: true,
+      dutyOverrides: getDutyOverridesMap(ss),
+      msg: 'Reset duty charge for ' + dateKey + ' back to automatic rotation (Rolls 1–23).'
+    });
+  }
+
+  const firstRoll = Math.floor(Number(params.firstRoll) || 0);
+  const secondRoll = Math.floor(Number(params.secondRoll) || 0);
+  if (firstRoll < 1 || firstRoll > 23 || secondRoll < 1 || secondRoll > 23) {
+    return jsonOut({ ok: false, msg: 'Select valid trainee Roll Numbers strictly between 1 and 23.' });
+  }
+  const dutyNote = String(params.dutyNote || '').trim();
+  const reanchor = String(params.reanchorFromHere || 'false').toLowerCase() === 'true';
+  const updatedAt = nowDateTimeIST();
+
+  let existingRow = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (formatCellDateIST(rows[i][0], '') === dateKey) {
+      existingRow = i + 1;
+      break;
+    }
+  }
+
+  const rowValues = [dateKey, firstRoll, secondRoll, dutyNote, reanchor, role || 'Trade Instructor', updatedAt];
+  if (existingRow !== -1) {
+    sheet.getRange(existingRow, 1, 1, rowValues.length).setValues([rowValues]);
+  } else {
+    sheet.appendRow(rowValues);
+  }
+
+  return jsonOut({
+    ok: true,
+    dutyOverrides: getDutyOverridesMap(ss),
+    msg: (reanchor ? 'Re-anchored rotation from ' : 'Updated duty charge for ') + dateKey +
+      ': Roll #' + String(firstRoll).padStart(2, '0') + ' & Roll #' + String(secondRoll).padStart(2, '0') + '.'
+  });
+}
+
+function isTraineeTimetableEditEnabled() {
+  const val = PropertiesService.getScriptProperties().getProperty('TRAINEE_TIMETABLE_EDIT_ENABLED');
+  return String(val || 'false').toLowerCase() === 'true';
+}
+
+function getTimetableList(ss) {
+  const sheet = getOrCreateSheet(ss, 'Timetable', TIMETABLE_HEADERS);
+  const rows = sheet.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const day = String(rows[i][1] || '').trim().toUpperCase();
+    const subject = String(rows[i][4] || '').trim();
+    if (!day || !subject) continue;
+    out.push({
+      id: String(rows[i][0] || (day + '_' + i)).trim(),
+      dayOfWeek: day,
+      startTime: formatCellTimeIST(rows[i][2]),
+      endTime: formatCellTimeIST(rows[i][3]),
+      subject: subject,
+      sessionType: String(rows[i][5] || 'Theory').trim(),
+      roomOrNote: String(rows[i][6] || '').trim(),
+      updatedBy: String(rows[i][7] || '').trim()
+    });
+  }
+  return out;
+}
+
+function handleGetTimetable(ss, params) {
+  return jsonOut({
+    ok: true,
+    timetable: getTimetableList(ss),
+    traineeTimetableEditEnabled: isTraineeTimetableEditEnabled()
+  });
+}
+
+function handleSaveTimetable(ss, params) {
+  const isTraineeEdit = String(params.isTraineeEdit || 'false').toLowerCase() === 'true';
+  const staffRole = getStaffRoleForPin(params.pin);
+  let editorLabel = staffRole || 'Trade Instructor';
+
+  if (!staffRole) {
+    if (!isTraineeEdit || !isTraineeTimetableEditEnabled()) {
+      return jsonOut({ ok: false, msg: 'Shared timetable editing is locked by Trade Instructor.' });
+    }
+    const roll = String(params.roll || '').trim();
+    const rollNum = Math.floor(Number(roll) || 0);
+    if (rollNum < 1 || rollNum > 23) {
+      return jsonOut({ ok: false, msg: 'Valid trainee Roll Number (1–23) required.' });
+    }
+    editorLabel = 'Trainee Roll #' + rollNum;
+  } else if (params.traineeTimetableEditEnabled !== undefined && params.traineeTimetableEditEnabled !== '') {
+    const allow = String(params.traineeTimetableEditEnabled).toLowerCase() === 'true';
+    PropertiesService.getScriptProperties().setProperty('TRAINEE_TIMETABLE_EDIT_ENABLED', allow ? 'true' : 'false');
+  }
+
+  let periods = [];
+  try {
+    const rawJson = String(params.periodsJson || '[]').trim();
+    const parsed = JSON.parse(rawJson);
+    if (Array.isArray(parsed)) {
+      periods = parsed;
+    }
+  } catch (e) {
+    return jsonOut({ ok: false, msg: 'Invalid timetable JSON format.' });
+  }
+
+  const sheet = getOrCreateSheet(ss, 'Timetable', TIMETABLE_HEADERS);
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, TIMETABLE_HEADERS.length).clearContent();
+  }
+
+  const rowsToWrite = [];
+  for (let i = 0; i < periods.length; i++) {
+    const p = periods[i] || {};
+    const day = String(p.dayOfWeek || p.d || 'MON').trim().toUpperCase();
+    const start = String(p.startTime || p.s || '').trim();
+    const end = String(p.endTime || p.e || '').trim();
+    const subject = String(p.subject || p.t || '').trim();
+    if (!subject && !start) continue;
+    rowsToWrite.push([
+      String(p.id || (day + '_' + (i + 1))).trim(),
+      day,
+      start,
+      end,
+      subject || 'Class Period',
+      String(p.sessionType || p.y || 'Theory').trim(),
+      String(p.roomOrNote || p.r || '').trim(),
+      String(p.updatedBy || p.u || editorLabel).trim()
+    ]);
+  }
+
+  if (rowsToWrite.length > 0) {
+    sheet.getRange(2, 1, rowsToWrite.length, TIMETABLE_HEADERS.length).setValues(rowsToWrite);
+  }
+
+  return jsonOut({
+    ok: true,
+    count: rowsToWrite.length,
+    traineeTimetableEditEnabled: isTraineeTimetableEditEnabled(),
+    timetable: getTimetableList(ss),
+    msg: 'Weekly timetable (' + rowsToWrite.length + ' slots) published & synced.'
   });
 }
