@@ -38,7 +38,6 @@ jobs:
           fi
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
           echo "Resolved Android root: $PROJECT_DIR"
-          ls -la "$PROJECT_DIR"
 
           if [ -f "$PROJECT_DIR/gradlew" ]; then
             chmod +x "$PROJECT_DIR/gradlew"
@@ -52,6 +51,22 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.3.1"
+
+      - name: Ensure debug.keystore exists
+        run: |
+          set -e
+          PROJECT_DIR="${{ steps.locate.outputs.project_dir }}"
+          if [ ! -f "$PROJECT_DIR/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$PROJECT_DIR/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Build Debug APK
         run: |
