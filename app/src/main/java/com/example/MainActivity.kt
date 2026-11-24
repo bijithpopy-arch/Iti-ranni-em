@@ -200,7 +200,7 @@ fun AppRoot(
 
     val remoteAppConfig: RemoteAppConfig = uiState.remoteAppConfig
     val remoteUiConfig: RemoteUiConfig = uiState.remoteUiConfig
-    val bugList: List> = uiState.bugReports
+    val bugList = uiState.bugReports
     val packageVersionName: String = remember<String>(context) {
         try {
             val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -217,7 +217,7 @@ fun AppRoot(
             "1.0"
         }
     }
-        val devPanelState: MutableState<Boolean> = remember<MutableState<Boolean>> {
+       val devPanelState: MutableState<Boolean> = remember<MutableState<Boolean>> {
         mutableStateOf<Boolean>(false)
     }
     var showDeveloperPanel: Boolean by devPanelState
