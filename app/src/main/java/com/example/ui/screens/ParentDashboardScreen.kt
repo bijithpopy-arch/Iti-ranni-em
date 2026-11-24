@@ -991,3 +991,148 @@ fun ParentAlertCard(
         }
     }
 }
+private fun readMarkField(obj: Any, vararg getterNames: String): String {
+    for (name in getterNames) {
+        val value = runCatching { obj.javaClass.getMethod(name).invoke(obj)?.toString() }.getOrNull()
+        if (!value.isNullOrBlank()) return value
+    }
+    return ""
+}
+
+@Composable
+private fun ParentMonthlyMarksSection(
+    studentName: String,
+    roll: String,
+    marks: List<Any>,
+    hasMarksAlertNotification: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalItiColors.current
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = colors.cardSurface,
+        border = BorderStroke(
+            1.dp,
+            if (hasMarksAlertNotification) colors.violetAccent.copy(alpha = 0.6f) else colors.borderSubtle
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("parent_monthly_marks_section")
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Monthly Exam Marks",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "$studentName (Roll #$roll)",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                        color = colors.textMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (hasMarksAlertNotification) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = colors.violetContainer,
+                        border = BorderStroke(1.dp, colors.violetAccent.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.NotificationsActive,
+                                contentDescription = null,
+                                tint = colors.violetAccent,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "UPDATED",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                ),
+                                color = colors.violetAccent
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (marks.isEmpty()) {
+                Text(
+                    text = "No monthly theory or lab exam marks published yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted
+                )
+            } else {
+                marks.forEach { item ->
+                    val month = readMarkField(item, "getMonthLabel", "getMonth", "getExamMonth").ifBlank { "Monthly Exam" }
+                    val examDate = readMarkField(item, "getExamDate", "getDate")
+                    val theory = readMarkField(item, "getTheoryMarks", "getTheory").ifBlank { "-" }
+                    val theoryMax = readMarkField(item, "getTheoryMax").ifBlank { "50" }
+                    val lab = readMarkField(item, "getLabMarks", "getLab", "getPracticalMarks").ifBlank { "-" }
+                    val labMax = readMarkField(item, "getLabMax").ifBlank { "100" }
+                    val remarks = readMarkField(item, "getRemarks", "getRemark")
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.background,
+                        border = BorderStroke(1.dp, colors.borderSubtle),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = month,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (examDate.isNotBlank()) {
+                                    Text(
+                                        text = examDate,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                                        color = colors.textMuted
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Theory: $theory / $theoryMax   •   Lab: $lab / $labMax",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
+                                color = colors.emeraldAccent
+                            )
+                            if (remarks.isNotBlank()) {
+                                Text(
+                                    text = remarks,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textMuted
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
