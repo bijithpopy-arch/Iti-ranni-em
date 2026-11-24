@@ -494,6 +494,55 @@ private fun RenderSessionScreens(
                 onRefreshAcademicSubmissions = viewModel::refreshAcademicSubmissions,
                 onExportPdf = { onPdfReady -> viewModel.exportAttendancePdf(onPdfReady) }
             )
+
+            SessionScreen.ParentDashboard -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Parent Dashboard",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                TextButton(onClick = viewModel::logout) {
+                    Text("Logout")
+                }
+            }
+
+            SessionScreen.DeveloperDashboard -> Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = viewModel::logout) {
+                        Text("Exit Dev Console")
+                    }
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    DeveloperMasterPanel(
+                        appConfig = uiState.remoteAppConfig,
+                        uiConfig = uiState.remoteUiConfig,
+                        bugList = uiState.bugReports,
+                        onSaveAppConfig = { updates ->
+                            viewModel.saveRemoteAppConfig(updates)
+                        },
+                        onSaveUiConfig = { updates, scope ->
+                            viewModel.saveRemoteUiConfig(updates, scope)
+                        },
+                        onResolveBug = { bugId, reply ->
+                            viewModel.resolveBugReport(bugId, reply)
+                        },
+                        onEditAnySheetRow = { tabName, rowIndex, colName, newValue ->
+                            viewModel.editSheetRow(tabName, rowIndex, colName, newValue)
+                        }
+                    )
+                }
+            }
         }
     }
 }
