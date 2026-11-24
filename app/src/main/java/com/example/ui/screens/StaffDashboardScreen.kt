@@ -51,6 +51,7 @@ import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.OfflineSyncQueue
 import com.example.data.StaffTab
 import com.example.data.TimetablePeriod
 import com.example.pdf.FullReportExportDialog
@@ -179,6 +181,10 @@ fun StaffDashboardScreen(
     }
     val attendanceClosed = uiState.staffData?.attendanceClosed ?: false
     var showFullPdfDialog by remember { mutableStateOf(false) }
+    var showExamMarksPanel by remember { mutableStateOf(false) }
+    val pendingOfflineCount = remember(context, uiState.selectedStaffTab, showExamMarksPanel) {
+        OfflineSyncQueue.count(context)
+    }
 
     if (showFullPdfDialog && uiState.staffData != null) {
         FullReportExportDialog(
@@ -207,6 +213,7 @@ fun StaffDashboardScreen(
                     isRefreshing = uiState.isRefreshingStaff,
                     isCheckingUpdate = uiState.isCheckingUpdate,
                     hasUpdate = uiState.availableUpdate != null,
+                    onOpenExamMarks = { showExamMarksPanel = !showExamMarksPanel },
                     onExportFullPdf = { showFullPdfDialog = true },
                     onCheckUpdate = onCheckUpdate,
                     onRefresh = onRefresh,
@@ -224,7 +231,10 @@ fun StaffDashboardScreen(
                             val selected = uiState.selectedStaffTab == tab
                             NavigationBarItem(
                                 selected = selected,
-                                onClick = { onTabSelected(tab) },
+                                onClick = {
+                                    showExamMarksPanel = false
+                                    onTabSelected(tab)
+                                },
                                 icon = {
                                     StaffTabIcon(
                                         tab = tab,
@@ -272,7 +282,10 @@ fun StaffDashboardScreen(
                             val selected = uiState.selectedStaffTab == tab
                             NavigationRailItem(
                                 selected = selected,
-                                onClick = { onTabSelected(tab) },
+                                onClick = {
+                                    showExamMarksPanel = false
+                                    onTabSelected(tab)
+                                },
                                 icon = {
                                     StaffTabIcon(
                                         tab = tab,
@@ -297,16 +310,57 @@ fun StaffDashboardScreen(
                         }
                     }
                 }
-
-                Column(
+                                Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
                 ) {
+                    if (pendingOfflineCount > 0) {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                            InlineAlertCard(
+                                message = "Offline queue: $pendingOfflineCount item(s) saved locally — auto-syncs when online.",
+                                isError = false
+                            )
+                        }
+                    }
+
                     if (uiState.staffBannerError != null) {
                         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                             InlineAlertCard(message = uiState.staffBannerError, isError = true)
                         }
+                    }
+
+                    if (showExamMarksPanel) {
+                        val rosterMap = remember(allAttendance) {
+                            allAttendance.associate { trainee ->
+                                (trainee.roll.toIntOrNull() ?: 0) to trainee.name
+                            }.filterKeys { it in 1..23 }
+                        }
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            MonthlyMarksScreen(
+                                traineeNamesByRoll = rosterMap,
+                                onPublishRow = { monthLabel, row ->
+                                    onSaveMonthlyMark(
+                                        "",
+                                        row.roll.toString(),
+                                        monthLabel,
+                                        "",
+                                        row.theoryInt,
+                                        50,
+                                        row.labInt,
+                                        100,
+                                        row.remarks,
+                                        true,
+                                        true,
+                                        {}
+                                    )
+                                },
+                                onExportPdf = { _, _ ->
+                                    showFullPdfDialog = true
+                                }
+                            )
+                        }
+                        return@Column
                     }
 
                     when (uiState.selectedStaffTab) {
@@ -392,6 +446,7 @@ private fun StaffHeaderBar(
     isRefreshing: Boolean,
     isCheckingUpdate: Boolean,
     hasUpdate: Boolean,
+    onOpenExamMarks: () -> Unit,
     onExportFullPdf: () -> Unit,
     onCheckUpdate: () -> Unit,
     onRefresh: () -> Unit,
@@ -426,6 +481,17 @@ private fun StaffHeaderBar(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                TextButton(
+                    onClick = onOpenExamMarks,
+                    modifier = Modifier.testTag("staff_header_exam_marks_button")
+                ) {
+                    Text(
+                        text = "Marks",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.amberAccent,
+                        maxLines = 1
+                    )
+                }
                 IconButton(
                     onClick = onExportFullPdf,
                     modifier = Modifier.testTag("staff_header_pdf_button")
