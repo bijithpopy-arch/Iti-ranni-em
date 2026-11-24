@@ -147,13 +147,13 @@ fun AppRoot(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context: Context = LocalContext.current
 
-    val notifState: MutableState<Boolean> = remember<MutableState<Boolean>>(context) {
-        mutableStateOf<Boolean>(checkPostNotificationPermission(context))
+    val notifState: MutableState<Boolean> = remember(context) {
+        mutableStateOf(checkPostNotificationPermission(context))
     }
     var hasNotificationPermission: Boolean by notifState
 
     val notificationPermissionLauncher: ActivityResultLauncher<String> =
-        rememberLauncherForActivityResult<String, Boolean>(
+        rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
         ) { granted: Boolean ->
             hasNotificationPermission = granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
@@ -168,11 +168,11 @@ fun AppRoot(
         }
     }
 
-    val biometricAvailable: Boolean = remember<Boolean>(context) {
+    val biometricAvailable: Boolean = remember(context) {
         BiometricAuthHelper.isBiometricAvailable(context)
     }
 
-    val triggerFingerprintUnlock: () -> Unit = remember<() -> Unit>(activity, viewModel) {
+    val triggerFingerprintUnlock: () -> Unit = remember(activity, viewModel) {
         {
             val state = viewModel.uiState.value
             val label = state.savedRoleLabel.ifBlank { state.selectedRole.displayName }
@@ -190,7 +190,8 @@ fun AppRoot(
     }
 
     LaunchedEffect(Unit) {
-        if (biometricAvailable && viewModel.uiState.value.biometricEnabled) {
+        val shouldAutoBiometric = viewModel.loadSavedSessionIfNeeded(context)
+        if (biometricAvailable && shouldAutoBiometric) {
             triggerFingerprintUnlock()
         }
         val cfg = viewModel.uiState.value.remoteAppConfig
@@ -202,7 +203,7 @@ fun AppRoot(
     val remoteAppConfig: RemoteAppConfig = uiState.remoteAppConfig
     val remoteUiConfig: RemoteUiConfig = uiState.remoteUiConfig
     val bugList = uiState.bugReports
-    val packageVersionName: String = remember<String>(context) {
+    val packageVersionName: String = remember(context) {
         try {
             val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.packageManager.getPackageInfo(
@@ -218,10 +219,7 @@ fun AppRoot(
             "1.0"
         }
     }
-    val devPanelState: MutableState<Boolean> = remember<MutableState<Boolean>> {
-        mutableStateOf<Boolean>(false)
-    }
-    var showDeveloperPanel: Boolean by devPanelState
+    var showDeveloperPanel by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -261,7 +259,6 @@ fun AppRoot(
                     }
                 }
             }
-
             if (remoteUiConfig.announcementBanner.isNotBlank()) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
@@ -341,18 +338,10 @@ fun AppRoot(
                         appConfig = remoteAppConfig,
                         uiConfig = remoteUiConfig,
                         bugList = bugList,
-                        onSaveAppConfig = { updates ->
-                            viewModel.saveRemoteAppConfig(updates)
-                        },
-                        onSaveUiConfig = { updates, scope ->
-                            viewModel.saveRemoteUiConfig(updates, scope)
-                        },
-                        onResolveBug = { bugId, reply ->
-                            viewModel.resolveBugReport(bugId, reply)
-                        },
-                        onEditAnySheetRow = { tabName, rowIndex, colName, newValue ->
-                            viewModel.editSheetRow(tabName, rowIndex, colName, newValue)
-                        }
+                        onSaveAppConfig = viewModel::saveRemoteAppConfig,
+                        onSaveUiConfig = viewModel::saveRemoteUiConfig,
+                        onResolveBug = viewModel::resolveBugReport,
+                        onEditAnySheetRow = viewModel::editSheetRow
                     )
                 }
             } else {
@@ -368,6 +357,7 @@ fun AppRoot(
         }
     }
 }
+
 @Composable
 private fun RenderSessionScreens(
     uiState: AppUiState,
@@ -378,7 +368,7 @@ private fun RenderSessionScreens(
     val context: Context = LocalContext.current
     Crossfade(
         targetState = uiState.screen,
-        animationSpec = tween<Float>(durationMillis = 240),
+        animationSpec = tween(durationMillis = 240),
         label = "session_screen_transition",
         modifier = Modifier.fillMaxSize()
     ) { screen ->
@@ -409,23 +399,45 @@ private fun RenderSessionScreens(
                 onMarkNoticesSeen = { viewModel.markNoticesSeen(context) },
                 onRefresh = viewModel::refreshTraineeDashboard,
                 onLogout = viewModel::logout,
-                onCheckUpdate = {
-                    val cfg = viewModel.uiState.value.remoteAppConfig
-                    if (cfg.updaterEnabled) {
-                        viewModel.checkForAppUpdate(silentIfUpToDate = false)
-                    }
-                },
                 onSubmitLeave = viewModel::submitLeaveRequest,
                 onDismissFeedback = viewModel::dismissLeaveFeedback,
                 onSaveProjectGroup = viewModel::saveProjectGroup,
                 onRefreshProjectGroups = viewModel::refreshProjectGroupsForTrainee,
                 onDismissProjectFeedback = viewModel::dismissProjectGroupFeedback,
-                onSubmitWorkQuery = viewModel::submitTraineeWorkMarkQuery,
+                onSubmitWorkMarkQuery = viewModel::submitTraineeWorkMarkQuery,
                 onDismissWorkQueryFeedback = viewModel::dismissTraineeWorkMarkQueryFeedback,
                 onSubmitRunningLate = viewModel::submitTraineeRunningLateAlert,
                 onDismissRunningLateFeedback = viewModel::dismissTraineeRunningLateAlertFeedback,
                 onSubmitAcademicRecord = viewModel::submitTraineeAcademicRecord,
-                onDismissAcademicFeedback = viewModel::dismissTraineeAcademicFeedback
+                onRefreshAcademicSubmission = viewModel::refreshTraineeAcademicSubmission,
+                onDismissAcademicFeedback = viewModel::dismissTraineeAcademicFeedback,
+                onRefreshTechNews = viewModel::refreshTechnicalNews,
+                onSaveLocalTimetable = { periods -> viewModel.saveTraineeLocalTimetable(context, periods) },
+                onResetTimetableToOfficial = { viewModel.resetTraineeTimetableToOfficial(context) },
+                onSubmitSharedTimetable = { periods -> viewModel.submitTraineeSharedTimetable(context, periods) },
+                onDismissTimetableFeedback = viewModel::dismissTimetableFeedback,
+                onCheckUpdate = {
+                    val cfg = viewModel.uiState.value.remoteAppConfig
+                    if (cfg.updaterEnabled) {
+                        viewModel.checkForAppUpdate(silentIfUpToDate = false)
+                    }
+                }
+            )
+
+            SessionScreen.ParentDashboard -> ParentDashboardScreen(
+                uiState = uiState,
+                onRefresh = viewModel::refreshParentDashboard,
+                onLogout = viewModel::logout,
+                onEvaluateNotification = { viewModel.evaluateParentNotification(context) },
+                onSubmitBunkAlert = viewModel::submitParentBunkAlert,
+                onSubmitLeaveReason = viewModel::submitParentLeaveReason,
+                onDismissFeedback = viewModel::dismissParentAlertFeedback,
+                onCheckUpdate = {
+                    val cfg = viewModel.uiState.value.remoteAppConfig
+                    if (cfg.updaterEnabled) {
+                        viewModel.checkForAppUpdate(silentIfUpToDate = false)
+                    }
+                }
             )
 
             SessionScreen.StaffDashboard -> StaffDashboardScreen(
@@ -447,18 +459,18 @@ private fun RenderSessionScreens(
                 onExportPdf = { onPdfReady -> viewModel.exportAttendancePdf(onPdfReady) },
                 onConfirmCloseAttendance = viewModel::confirmCloseAttendance,
                 onDismissCloseFeedback = viewModel::dismissCloseAttendanceFeedback,
-                onBulkMorningRollCall = viewModel::bulkMorningRollCall,
+                onBulkMorningRollCall = { viewModel.bulkMorningRollCall() },
                 onMarkException = viewModel::markAttendanceException,
-                onManualPunch = viewModel::manualAttendancePunch,
+                onManualPunch = { roll, status -> viewModel.manualAttendancePunch(roll, status) },
                 onConfirmDuplicatePunch = viewModel::confirmDuplicatePunch,
                 onDismissDuplicatePunch = viewModel::dismissDuplicatePunch,
                 onUndoAttendance = viewModel::undoAttendanceAction,
-                onResetAttendanceToAbsent = viewModel::resetAttendanceToAbsent,
+                onResetAttendanceToAbsent = { roll, name -> viewModel.resetAttendanceToAbsent(roll, name) },
                 onRefreshAcademicSubmissions = viewModel::refreshAcademicSubmissions,
                 onVerifyAcademicSubmission = viewModel::verifyAcademicSubmission,
                 onForwardSingleAcademicToPrincipal = viewModel::forwardSingleAcademicToPrincipal,
                 onForwardAllAcademicToPrincipal = viewModel::forwardAllVerifiedAcademicToPrincipal,
-                onSetLateGrace = viewModel::setLateGraceForTrainee,
+                onSetLateGrace = { roll, mode, cutoff, note -> viewModel.setLateGraceForTrainee(roll, mode, cutoff, note) },
                 onDismissLateGraceFeedback = viewModel::dismissLateGraceFeedback,
                 onSendInstantParentAlert = viewModel::sendInstantParentAlert,
                 onToggleEarlyClassLogout = viewModel::toggleEarlyClassLogout,
@@ -474,10 +486,14 @@ private fun RenderSessionScreens(
                 onDismissWorkQueryReplyFeedback = viewModel::dismissWorkQueryReplyFeedback,
                 onSaveDutyOverride = viewModel::saveDutyOverride,
                 onDismissDutyOverrideFeedback = viewModel::dismissDutyOverrideFeedback,
-                onPublishTimetable = viewModel::publishTimetable,
+                onPublishTimetable = { periods, allowTraineeEdit ->
+                    viewModel.publishTimetable(context, periods, allowTraineeEdit)
+                },
                 onDismissTimetableFeedback = viewModel::dismissTimetableFeedback,
-                onEvaluateInstructorNotifications = viewModel::evaluateInstructorNotifications,
-                onPostNotice = viewModel::postCampusNotice,
+                onEvaluateInstructorNotifications = { viewModel.evaluateInstructorNotifications(context) },
+                onPostNotice = { title, category, body, onReset ->
+                    viewModel.postCampusNotice(title, category, body, onReset)
+                },
                 onPostHoliday = viewModel::postCampusHoliday,
                 onToggleProjectGroupsAccess = viewModel::toggleProjectGroupsAccess,
                 onRefreshProjectGroups = viewModel::refreshProjectGroupsForStaff,
@@ -487,6 +503,7 @@ private fun RenderSessionScreens(
 
             SessionScreen.PrincipalDashboard -> PrincipalDashboardScreen(
                 uiState = uiState,
+                onTabSelected = viewModel::onPrincipalTabSelected,
                 onRefresh = viewModel::refreshPrincipalDashboard,
                 onLogout = viewModel::logout,
                 onCheckUpdate = {
@@ -495,27 +512,15 @@ private fun RenderSessionScreens(
                         viewModel.checkForAppUpdate(silentIfUpToDate = false)
                     }
                 },
-                onCosignLeave = viewModel::cosignLeaveRequest,
-                onDismissCosignFeedback = viewModel::dismissPrincipalCosignFeedback,
-                onVerifyAcademicSubmission = viewModel::verifyAcademicSubmission,
-                onRefreshAcademicSubmissions = viewModel::refreshAcademicSubmissions,
-                onExportPdf = { onPdfReady -> viewModel.exportAttendancePdf(onPdfReady) }
-            )
-
-            SessionScreen.ParentDashboard -> ParentDashboardScreen(
-                uiState = uiState,
-                onRefresh = viewModel::refreshParentDashboard,
-                onLogout = viewModel::logout,
-                onEvaluateNotification = { viewModel.evaluateParentNotification(context) },
-                onSubmitBunkAlert = viewModel::submitParentBunkAlert,
-                onSubmitLeaveReason = viewModel::submitParentLeaveReason,
-                onDismissFeedback = viewModel::dismissParentAlertFeedback,
-                onCheckUpdate = {
-                    val cfg = viewModel.uiState.value.remoteAppConfig
-                    if (cfg.updaterEnabled) {
-                        viewModel.checkForAppUpdate(silentIfUpToDate = false)
-                    }
-                }
+                onExportPdf = { onPdfReady -> viewModel.exportAttendancePdf(onPdfReady) },
+                onApproveAndSign = viewModel::approveAndSignLeave,
+                onRejectLeave = viewModel::rejectLeaveRequest,
+                onDismissApprovalFeedback = viewModel::dismissApprovalFeedback,
+                onPublishPinnedBroadcast = { title, category, body, onReset ->
+                    viewModel.postCampusNotice(title, category, body, pinned = true, onSuccessReset = onReset)
+                },
+                onResetAttendanceToAbsent = { roll, name -> viewModel.resetAttendanceToAbsent(roll, name) },
+                onRefreshAcademicSubmissions = viewModel::refreshAcademicSubmissions
             )
 
             SessionScreen.DeveloperDashboard -> Column(modifier = Modifier.fillMaxSize()) {
@@ -526,26 +531,18 @@ private fun RenderSessionScreens(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = viewModel::logout) {
-                        Text("Exit Dev Console")
+                        Text("Exit Developer Console")
                     }
                 }
                 Box(modifier = Modifier.weight(1f)) {
                     DeveloperMasterPanel(
-                        appConfig = uiState.remoteAppConfig,
-                        uiConfig = uiState.remoteUiConfig,
-                        bugList = uiState.bugReports,
-                        onSaveAppConfig = { updates ->
-                            viewModel.saveRemoteAppConfig(updates)
-                        },
-                        onSaveUiConfig = { updates, scope ->
-                            viewModel.saveRemoteUiConfig(updates, scope)
-                        },
-                        onResolveBug = { bugId, reply ->
-                            viewModel.resolveBugReport(bugId, reply)
-                        },
-                        onEditAnySheetRow = { tabName, rowIndex, colName, newValue ->
-                            viewModel.editSheetRow(tabName, rowIndex, colName, newValue)
-                        }
+                        appConfig = remoteAppConfig,
+                        uiConfig = remoteUiConfig,
+                        bugList = bugList,
+                        onSaveAppConfig = viewModel::saveRemoteAppConfig,
+                        onSaveUiConfig = viewModel::saveRemoteUiConfig,
+                        onResolveBug = viewModel::resolveBugReport,
+                        onEditAnySheetRow = viewModel::editSheetRow
                     )
                 }
             }
