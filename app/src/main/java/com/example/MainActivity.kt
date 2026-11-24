@@ -14,21 +14,29 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.notifications.AttendanceNotificationHelper
 import com.example.notifications.BackgroundSyncScheduler
 import com.example.security.BiometricAuthHelper
 import com.example.ui.components.AppUpdateDialog
+import com.example.ui.screens.DeveloperMasterPanel
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.ParentDashboardScreen
 import com.example.ui.screens.PrincipalDashboardScreen
+import com.example.ui.screens.RemoteAppConfig
+import com.example.ui.screens.RemoteUiConfig
+import com.example.ui.screens.ReportBugButtonAndDialog
 import com.example.ui.screens.StaffDashboardScreen
 import com.example.ui.screens.TraineeDashboardScreen
 import com.example.ui.theme.ItiRanniTheme
@@ -134,6 +142,26 @@ fun ItiAttendanceApp(
             triggerFingerprintUnlock()
         }
         viewModel.checkForAppUpdate(silentIfUpToDate = true)
+    }
+
+    val remoteAppConfig = remember(uiState) { RemoteAppConfig() }
+    val remoteUiConfig = remember(uiState) { RemoteUiConfig() }
+    val bugList = remember(uiState) { emptyList>() }
+    val packageVersionName = remember(context) {
+        try {
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    android.content.pm.PackageManager.PackageInfoFlags.of(0L)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            "${info.versionName ?: "1.0"} (${androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(info)})"
+        } catch (_: Exception) {
+            "1.0"
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -270,7 +298,38 @@ fun ItiAttendanceApp(
                     onResetAttendanceToAbsent = viewModel::resetTraineeAttendanceToAbsent,
                     onRefreshAcademicSubmissions = viewModel::refreshStaffAcademicSubmissions
                 )
+
+                SessionScreen.DeveloperDashboard -> DeveloperMasterPanel(
+                    appConfig = remoteAppConfig,
+                    uiConfig = remoteUiConfig,
+                    bugList = bugList,
+                    onSaveAppConfig = { /* hook to viewModel.updateRemoteAppConfig(it) */ },
+                    onSaveUiConfig = { updates, screenName -> /* hook to viewModel.saveRemoteUiConfig(updates, screenName) */ },
+                    onResolveBug = { bugId, reply -> /* hook to viewModel.resolveBugReport(bugId, reply) */ },
+                    onEditAnySheetRow = { tabName, rowIndex, colName, newValue ->
+                        /* hook to viewModel.editSheetCell(tabName, rowIndex, colName, newValue) */
+                    }
+                )
             }
+        }
+
+        // Global Report Bug button on every screen
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 8.dp, end = 12.dp)
+        ) {
+            ReportBugButtonAndDialog(
+                screenName = uiState.screen.name,
+                reportedBy = uiState.selectedRole.displayName,
+                role = uiState.selectedRole.name,
+                appVersion = packageVersionName,
+                visible = remoteUiConfig.showReportBugButton,
+                onSubmitBug = { screenName, reportedBy, role, version, description ->
+                    /* hook to viewModel.submitBugReport(screenName, reportedBy, role, version, description) */
+                }
+            )
         }
 
         // Global In-App Self-Updater Dialog
