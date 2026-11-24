@@ -6,13 +6,14 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.result.ActivityResultLauncher
-
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.OfflineSyncQueue
 import com.example.notifications.AttendanceNotificationHelper
@@ -73,6 +75,55 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+}
+
+private object BiometricAuthHelper {
+    fun isBiometricAvailable(context: Context): Boolean {
+        val manager = BiometricManager.from(context)
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            BiometricManager.Authenticators.BIOMETRIC_WEAK
+        return manager.canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    fun showFingerprintPrompt(
+        activity: ComponentActivity,
+        roleLabel: String,
+        onAuthenticated: () -> Unit,
+        onFallbackToPassword: (String?) -> Unit
+    ) {
+        val fragmentActivity = activity as? FragmentActivity
+        if (fragmentActivity == null) {
+            onFallbackToPassword(null)
+            return
+        }
+        val executor = ContextCompat.getMainExecutor(fragmentActivity)
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                onAuthenticated()
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                if (errorCode != BiometricPrompt.ERROR_USER_CANCELED) {
+                    onFallbackToPassword(errString.toString())
+                }
+            }
+
+            override fun onAuthenticationFailed() {
+                // Allow retry until success or user cancellation
+            }
+        }
+        val prompt = BiometricPrompt(fragmentActivity, executor, callback)
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock $roleLabel")
+            .setSubtitle("Use fingerprint or biometric authentication")
+            .setNegativeButtonText("Use PIN / Password")
+            .setAllowedAuthenticators(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK
+            )
+            .build()
+        prompt.authenticate(info)
     }
 }
 
