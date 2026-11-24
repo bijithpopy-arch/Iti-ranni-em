@@ -189,8 +189,7 @@ fun AppRoot(
     }
 
     LaunchedEffect(Unit) {
-        val shouldAutoPromptBiometric = viewModel.loadSavedSessionIfNeed()
-        if (shouldAutoPromptBiometric && biometricAvailable) {
+        if (biometricAvailable && viewModel.uiState.value.biometricEnabled) {
             triggerFingerprintUnlock()
         }
         val cfg = viewModel.uiState.value.remoteAppConfig
