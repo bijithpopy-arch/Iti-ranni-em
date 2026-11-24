@@ -2547,38 +2547,7 @@ class AppViewModel(
     fun onEspRollChanged(value: String) = onEspRollInputChanged(value)
 
     fun triggerManualEspTap() {
-        val current = _uiState.value
-        if (current.isTappingEsp) return
-        val rollNum = current.espRollInput.toIntOrNull()
-        if (rollNum == null || rollNum !in 1..DutyRotationEngine.TOTAL_TRAINEES) {
-            _uiState.update { it.copy(espTapError = "Enter a valid trainee Roll Number (1–23).") }
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isTappingEsp = true, espTapError = null) }
-            when (val result = apiClient.triggerEspTap(rollNum.toString())) {
-                is ApiResult.Success -> {
-                    _uiState.update { state ->
-                        state.copy(
-                            isTappingEsp = false,
-                            lastEspTap = result.data,
-                            espTapHistory = listOf(result.data) + state.espTapHistory.take(9),
-                            espTapError = null
-                        )
-                    }
-                    refreshStaffDashboard()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isTappingEsp = false, espTapError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun saveDutyOverride(
+        fun saveDutyOverride(
         dateKey: String,
         firstRoll: Int,
         secondRoll: Int,
@@ -2618,4 +2587,199 @@ class AppViewModel(
                             } else {
                                 newMap[cleanDate] = DutyOverrideEntry(
                                     dateKey = cleanDate,
-                             
+                                    firstRoll = firstRoll,
+                                    secondRoll = secondRoll,
+                                    dutyNote = dutyNote.trim(),
+                                    reanchorFromHere = reanchorFromHere,
+                                    updatedBy = state.activeStaffRole.displayName
+                                )
+                            }
+                            sd.copy(dutyOverrides = newMap)
+                        }
+                        state.copy(
+                            isSavingDutyOverride = false,
+                            staffData = updatedStaff,
+                            dutyOverrideMessage = result.data.message,
+                            dutyOverrideError = null
+                        )
+                    }
+                    refreshStaffDashboard()
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(isSavingDutyOverride = false, dutyOverrideError = result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    fun dismissDutyOverrideFeedback() {
+        _uiState.update { it.copy(dutyOverrideMessage = null, dutyOverrideError = null) }
+    }
+
+    fun saveTraineeLocalTimetable(context: Context, periods: List<TimetablePeriod>) {
+        val roll = _uiState.value.activeRoll
+        TimetableStore.saveTraineeCustomEdits(context, roll, periods)
+        _uiState.update {
+            it.copy(
+                traineeCustomTimetable = periods,
+                timetableFeedbackMessage = "Saved to My Custom Edits on this device.",
+                timetableError = null
+            )
+        }
+    }
+
+    fun resetTraineeTimetableToOfficial(context: Context) {
+        val roll = _uiState.value.activeRoll
+        TimetableStore.clearTraineeCustomEdits(context, roll)
+        _uiState.update {
+            it.copy(
+                traineeCustomTimetable = null,
+                timetableFeedbackMessage = "Timetable reset to Official EMech Schedule.",
+                timetableError = null
+            )
+        }
+    }
+
+    fun submitTraineeSharedTimetable(context: Context, periods: List<TimetablePeriod>) {
+        val current = _uiState.value
+        if (current.isSavingTimetable || current.activeRoll.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(isSavingTimetable = true, timetableFeedbackMessage = null, timetableError = null)
+            }
+            when (
+                val result = apiClient.saveTimetable(
+                    pin = current.activePin,
+                    roll = current.activeRoll,
+                    periods = periods,
+                    traineeTimetableEditEnabled = null,
+                    isTraineeEdit = true
+                )
+            ) {
+                is ApiResult.Success -> {
+                    TimetableStore.saveOfficialCache(
+                        context,
+                        periods,
+                        current.traineeData?.traineeTimetableEditEnabled ?: true
+                    )
+                    TimetableStore.clearTraineeCustomEdits(context, current.activeRoll)
+                    _uiState.update { state ->
+                        state.copy(
+                            isSavingTimetable = false,
+                            officialTimetableCache = periods,
+                            traineeCustomTimetable = null,
+                            traineeData = state.traineeData?.copy(timetable = periods),
+                            timetableFeedbackMessage = result.data.message,
+                            timetableError = null
+                        )
+                    }
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(isSavingTimetable = false, timetableError = result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    fun publishOfficialTimetable(
+        context: Context,
+        periods: List<TimetablePeriod>,
+        allowTraineeEdit: Boolean
+    ) {
+        val current = _uiState.value
+        if (current.isSavingTimetable || current.activePin.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(isSavingTimetable = true, timetableFeedbackMessage = null, timetableError = null)
+            }
+            when (
+                val result = apiClient.saveTimetable(
+                    pin = current.activePin,
+                    roll = "",
+                    periods = periods,
+                    traineeTimetableEditEnabled = allowTraineeEdit,
+                    isTraineeEdit = false
+                )
+            ) {
+                is ApiResult.Success -> {
+                    TimetableStore.saveOfficialCache(context, periods, allowTraineeEdit)
+                    _uiState.update { state ->
+                        state.copy(
+                            isSavingTimetable = false,
+                            officialTimetableCache = periods,
+                            staffData = state.staffData?.copy(
+                                timetable = periods,
+                                traineeTimetableEditEnabled = allowTraineeEdit
+                            ),
+                            timetableFeedbackMessage = result.data.message,
+                            timetableError = null
+                        )
+                    }
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(isSavingTimetable = false, timetableError = result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    fun publishTimetable(context: Context, periods: List<TimetablePeriod>, allowTraineeEdit: Boolean) =
+        publishOfficialTimetable(context, periods, allowTraineeEdit)
+
+    fun dismissTimetableFeedback() {
+        _uiState.update { it.copy(timetableFeedbackMessage = null, timetableError = null) }
+    }
+
+    fun logout() {
+        val prev = _uiState.value
+        _uiState.update {
+            AppUiState(
+                selectedRole = prev.selectedRole,
+                rollInput = if (prev.rememberMe) prev.rollInput else "",
+                pinInput = if (prev.rememberMe) prev.pinInput else "",
+                rememberMe = prev.rememberMe,
+                biometricEnabled = prev.biometricEnabled,
+                hasSavedCredentials = prev.hasSavedCredentials,
+                savedRoleLabel = prev.savedRoleLabel
+            )
+        }
+    }
+    }
+        val current = _uiState.value
+        if (current.isTappingEsp) return
+        val rollNum = current.espRollInput.toIntOrNull()
+        if (rollNum == null || rollNum !in 1..DutyRotationEngine.TOTAL_TRAINEES) {
+            _uiState.update { it.copy(espTapError = "Enter a valid trainee Roll Number (1–23).") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isTappingEsp = true, espTapError = null) }
+            when (val result = apiClient.triggerEspTap(rollNum.toString())) {
+                is ApiResult.Success -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            isTappingEsp = false,
+                            lastEspTap = result.data,
+                            espTapHistory = listOf(result.data) + state.espTapHistory.take(9),
+                            espTapError = null
+                        )
+                    }
+                    refreshStaffDashboard()
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(isTappingEsp = false, espTapError = result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    
