@@ -1,7 +1,7 @@
 package com.example.ui.screens
 
 data class RemoteAppConfig(
-    val developerPin: String = "7777",
+    val developerPin: String = "9037",
     val updaterEnabled: Boolean = true,
     val releaseUpdateToUsers: Boolean = false,
     val instructorAccessEnabled: Boolean = true,
@@ -15,7 +15,7 @@ data class RemoteAppConfig(
 ) {
     companion object {
         fun fromMap(map: Map<String, String>): RemoteAppConfig = RemoteAppConfig(
-            developerPin = map["developerPin"]?.ifBlank { "7777" } ?: "7777",
+            developerPin = map["developerPin"]?.ifBlank { "0000" } ?: "0000",
             updaterEnabled = map["updaterEnabled"]?.lowercase() != "false",
             releaseUpdateToUsers = map["releaseUpdateToUsers"]?.lowercase() == "true",
             instructorAccessEnabled = map["instructorAccessEnabled"]?.lowercase() != "false",
