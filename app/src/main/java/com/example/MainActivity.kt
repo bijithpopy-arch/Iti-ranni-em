@@ -312,7 +312,7 @@ fun AppRoot(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ReportBugButtonAndDialog(
-                        screenName = uiState.screen.name,
+                        screenName = uiState.screen::class.simpleName ?: "Screen",
                         reportedBy = uiState.rollInput.ifBlank { uiState.selectedRole.displayName },
                         role = uiState.selectedRole.displayName,
                         appVersion = packageVersionName,
