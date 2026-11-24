@@ -2,9 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,41 +12,33 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.rounded.CalendarMonth
-import androidx.compose.material.icons.rounded.Campaign
-import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Grade
 import androidx.compose.material.icons.rounded.Groups
-import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.QuestionAnswer
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -57,17 +47,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.data.AcademicSubmissionStatuses
 import com.example.data.AttendanceApiClient
 import com.example.data.DutyRotationEngine
 import com.example.data.MonthlyExamMark
+import com.example.data.TechNewsItem
 import com.example.data.TimetablePeriod
+import com.example.data.TimetableStore
+import com.example.ui.components.ActiveHolidayBanner
 import com.example.ui.components.DigitalSignaturePreview
 import com.example.ui.components.ExternalUrlHelper
 import com.example.ui.components.InlineAlertCard
@@ -80,13 +70,6 @@ enum class NewsLanguageFilter(val label: String) {
     BOTH("Both (EN + ML)"),
     ENGLISH("English"),
     MALAYALAM("മലയാളം")
-}
-
-private enum class AcademicsSubSection(val label: String) {
-    LOG_BOOK("Log Book"),
-    TIMETABLE("Timetable"),
-    DUTY_TURN("Duty Turn"),
-    PROJECTS("Project Groups")
 }
 
 @Composable
@@ -107,156 +90,115 @@ fun TraineeMarksTab(
     val marks = data?.monthlyMarks.orEmpty()
     val queries = data?.myWorkMarkQueries.orEmpty()
 
-    var monthLabel by remember { mutableStateOf(marks.firstOrNull()?.monthLabel ?: "Nov 2026 Evaluation") }
-    var workRef by remember { mutableStateOf("") }
-    var currentNote by remember { mutableStateOf("") }
+    var monthLabel by remember { mutableStateOf(marks.firstOrNull()?.monthLabel ?: "Monthly Evaluation") }
+    var workReference by remember { mutableStateOf("") }
+    var currentMarkNote by remember { mutableStateOf("") }
     var traineeNote by remember { mutableStateOf("") }
 
     LazyColumn(
-        modifier = modifier
-            .widthIn(max = 640.dp)
-            .fillMaxSize()
-            .testTag("trainee_marks_tab"),
+        modifier = modifier.widthIn(max = 640.dp).fillMaxSize().testTag("trainee_marks_tab"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(Icons.Rounded.Grade, contentDescription = null, tint = colors.amberAccent)
-                Column {
-                    Text(
-                        text = "Monthly Theory & Practical Marks",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Published & digitally signed by Trade Instructor",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textMuted
-                    )
-                }
-            }
+            Text("Digitally Signed Exam & Practical Marks", style = MaterialTheme.typography.titleMedium)
         }
 
         if (marks.isEmpty()) {
             item {
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(16.dp),
                     color = colors.cardSurface,
                     border = BorderStroke(1.dp, colors.borderSubtle),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "No exam marks published yet for Roll #${uiState.activeRoll}. Marks signed by your Trade Instructor will appear here.",
+                        text = "No marks published yet by your Trade Instructor.",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textMuted,
-                        modifier = Modifier.padding(18.dp)
+                        modifier = Modifier.padding(16.dp)
                     )
                 }
             }
         } else {
-            items(marks, key = { "tr_mark_${it.id}_${it.monthLabel}" }) { mark ->
+            items(marks, key = { "tr_mk_${it.id}_${it.monthLabel}_${it.roll}" }) { mark ->
                 TraineeSignedMarkCard(mark = mark)
             }
         }
 
-        // Work / Lab Mark Query Form
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = colors.cardSurface,
-                border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.45f)),
+                border = BorderStroke(1.dp, colors.borderSubtle),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Rounded.QuestionAnswer, contentDescription = null, tint = colors.skyAccent, modifier = Modifier.size(18.dp))
-                        Text(
-                            text = "Ask Instructor About Practical / Theory Marks",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.QuestionAnswer, contentDescription = null, tint = colors.skyAccent)
+                        Text("Ask Trade Instructor About a Mark", style = MaterialTheme.typography.titleSmall)
                     }
                     OutlinedTextField(
                         value = monthLabel,
                         onValueChange = { monthLabel = it },
-                        label = { Text("Exam / Evaluation Month") },
+                        label = { Text("Exam / Month Label") },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
-                        value = workRef,
-                        onValueChange = { workRef = it },
-                        label = { Text("Job / Practical Name or Theory Paper") },
-                        placeholder = { Text("e.g., SMD Soldering Job #4") },
+                        value = workReference,
+                        onValueChange = { workReference = it },
+                        label = { Text("Practical Job / Theory Paper Name") },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("trainee_query_ref_input")
+                        modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
-                        value = currentNote,
-                        onValueChange = { currentNote = it },
-                        label = { Text("Shown Mark (Optional)") },
+                        value = currentMarkNote,
+                        onValueChange = { currentMarkNote = it },
+                        label = { Text("Shown Mark (optional)") },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = traineeNote,
                         onValueChange = { traineeNote = it },
-                        label = { Text("Your Doubt / Query") },
+                        label = { Text("Question / Clarification Note") },
                         minLines = 2,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("trainee_query_note_input")
+                        modifier = Modifier.fillMaxWidth()
                     )
 
                     AnimatedVisibility(visible = uiState.workQueryMessage != null) {
-                        InlineAlertCard(message = uiState.workQueryMessage.orEmpty(), isError = false)
+                        InlineAlertCard(uiState.workQueryMessage.orEmpty(), isError = false)
                     }
                     AnimatedVisibility(visible = uiState.workQueryError != null) {
-                        InlineAlertCard(message = uiState.workQueryError.orEmpty(), isError = true)
+                        InlineAlertCard(uiState.workQueryError.orEmpty(), isError = true)
                     }
 
                     Button(
                         onClick = {
                             onDismissWorkQueryFeedback()
-                            onSubmitWorkMarkQuery(monthLabel, workRef, currentNote, traineeNote) {
-                                workRef = ""
-                                currentNote = ""
+                            onSubmitWorkMarkQuery(monthLabel, workReference, currentMarkNote, traineeNote) {
+                                workReference = ""
+                                currentMarkNote = ""
                                 traineeNote = ""
                             }
                         },
-                        enabled = !uiState.isSubmittingWorkQuery && workRef.isNotBlank() && traineeNote.isNotBlank(),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("trainee_submit_query_button")
+                        enabled = !uiState.isSubmittingWorkQuery && traineeNote.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Send Query to Instructor")
+                        if (uiState.isSubmittingWorkQuery) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Text("Send Mark Query", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
         }
 
         if (queries.isNotEmpty()) {
-            item {
-                Text(
-                    text = "My Mark Queries (${queries.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            items(queries, key = { "tr_q_${it.id}" }) { q ->
+            item { Text("Your Mark Queries (${queries.size})", style = MaterialTheme.typography.titleMedium) }
+            items(queries, key = { "tr_mq_${it.id}" }) { q ->
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = colors.cardSurface,
@@ -264,21 +206,10 @@ fun TraineeMarksTab(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(q.workReference, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                            Text(
-                                text = q.status,
-                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
-                                color = if (q.status == "REVISED") colors.emeraldAccent else colors.amberAccent
-                            )
-                        }
-                        Text(q.traineeNote, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                        Text("${q.workReference} • ${q.status}", style = MaterialTheme.typography.titleSmall, color = colors.skyAccent)
+                        Text(q.traineeNote, style = MaterialTheme.typography.bodySmall)
                         if (q.instructorReply.isNotBlank()) {
-                            Text(
-                                text = "Instructor Reply: ${q.instructorReply}",
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = colors.emeraldAccent
-                            )
+                            Text("Instructor Reply: ${q.instructorReply}", style = MaterialTheme.typography.bodySmall, color = colors.emeraldAccent)
                         }
                     }
                 }
@@ -290,89 +221,48 @@ fun TraineeMarksTab(
 @Composable
 fun TraineeSignedMarkCard(mark: MonthlyExamMark) {
     val colors = LocalItiColors.current
-    val pctColor = when {
-        mark.percentage >= 60 -> colors.emeraldAccent
-        mark.percentage >= 40 -> colors.amberAccent
-        else -> colors.redAccent
-    }
+    val accent = if (mark.percentage >= 60) colors.emeraldAccent else if (mark.percentage >= 40) colors.amberAccent else colors.redAccent
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = colors.cardSurface,
-        border = BorderStroke(1.5.dp, pctColor.copy(alpha = 0.55f)),
+        border = BorderStroke(1.dp, colors.borderSubtle),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = mark.monthLabel,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(mark.monthLabel, style = MaterialTheme.typography.titleMedium)
                     if (mark.examDate.isNotBlank()) {
-                        Text(
-                            text = "Exam Date: ${mark.examDate}",
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                            color = colors.textMuted
-                        )
+                        Text("Date: ${mark.examDate}", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
                     }
                 }
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = pctColor.copy(alpha = 0.16f)
-                ) {
+                Surface(shape = RoundedCornerShape(50), color = accent.copy(alpha = 0.16f)) {
                     Text(
                         text = "${mark.totalMarks}/${mark.totalMax} (${mark.percentage}%)",
-                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
-                        color = pctColor,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
+                        color = accent,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                 }
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.background,
-                    border = BorderStroke(1.dp, colors.borderSubtle),
-                    modifier = Modifier.weight(1f)
-                ) {
+                Surface(shape = RoundedCornerShape(12.dp), color = colors.cardElevated, modifier = Modifier.weight(1f)) {
                     Column(modifier = Modifier.padding(10.dp)) {
-                        Text("THEORY", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-                        Text(
-                            "${mark.theoryMarks} / ${mark.theoryMax}",
-                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
-                            color = colors.skyAccent
-                        )
+                        Text("Theory", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+                        Text("${mark.theoryMarks} / ${mark.theoryMax}", style = MaterialTheme.typography.titleMedium.copy(fontFamily = JetBrainsMonoFamily))
                     }
                 }
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.background,
-                    border = BorderStroke(1.dp, colors.borderSubtle),
-                    modifier = Modifier.weight(1f)
-                ) {
+                Surface(shape = RoundedCornerShape(12.dp), color = colors.cardElevated, modifier = Modifier.weight(1f)) {
                     Column(modifier = Modifier.padding(10.dp)) {
-                        Text("PRACTICAL / LAB", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-                        Text(
-                            "${mark.labMarks} / ${mark.labMax}",
-                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
-                            color = colors.emeraldAccent
-                        )
+                        Text("Practical / Lab", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+                        Text("${mark.labMarks} / ${mark.labMax}", style = MaterialTheme.typography.titleMedium.copy(fontFamily = JetBrainsMonoFamily))
                     }
                 }
             }
 
             if (mark.remarks.isNotBlank()) {
-                Text(
-                    text = "Remarks: ${mark.remarks}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Text("Remarks: ${mark.remarks}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
             }
 
             if (mark.signedBy.isNotBlank() || mark.signatureData.isNotBlank()) {
@@ -411,340 +301,229 @@ fun TraineeAcademicsTab(
 ) {
     val colors = LocalItiColors.current
     val data = uiState.traineeData
-    var activeSub by remember { mutableStateOf(AcademicsSubSection.LOG_BOOK) }
+    val activeSub = uiState.traineeAcademicSubmission ?: data?.myAcademicSubmission
+
+    var theoryTopic by remember(activeSub) { mutableStateOf(activeSub?.theoryTopic.orEmpty()) }
+    var theoryStatus by remember(activeSub) { mutableStateOf(activeSub?.theoryStatus ?: "Completed") }
+    var theoryUpdatedDate by remember(activeSub) { mutableStateOf(activeSub?.theoryUpdatedDate?.ifBlank { AttendanceApiClient.todayIstDateString() } ?: AttendanceApiClient.todayIstDateString()) }
+    var labJobName by remember(activeSub) { mutableStateOf(activeSub?.labJobName.orEmpty()) }
+    var labStatus by remember(activeSub) { mutableStateOf(activeSub?.labStatus ?: "Completed") }
+    var labSignedDate by remember(activeSub) { mutableStateOf(activeSub?.labSignedDate?.ifBlank { AttendanceApiClient.todayIstDateString() } ?: AttendanceApiClient.todayIstDateString()) }
+    var remarks by remember(activeSub) { mutableStateOf(activeSub?.remarks.orEmpty()) }
+
+    val baseTimetable = remember(uiState.activeTimetable) {
+        uiState.activeTimetable.ifEmpty { TimetableStore.defaultWeeklyTimetable() }
+    }
+    val editablePeriods = remember(baseTimetable) {
+        mutableStateListOf<TimetablePeriod>().apply { addAll(baseTimetable) }
+    }
+    var editTimetable by remember { mutableStateOf(false) }
+
+    var projectTitle by remember { mutableStateOf("") }
+    var memberRollsText by remember { mutableStateOf(uiState.activeRoll) }
+    var leaderRollText by remember { mutableStateOf(uiState.activeRoll) }
+    var leaderName by remember { mutableStateOf(data?.name.orEmpty()) }
+
+    val dutyToday = remember(data?.dutyOverrides, data?.holidays) {
+        DutyRotationEngine.assignmentForDate(
+            overrides = data?.dutyOverrides.orEmpty(),
+            holidays = data?.holidays.orEmpty()
+        )
+    }
 
     LazyColumn(
-        modifier = modifier
-            .widthIn(max = 640.dp)
-            .fillMaxSize()
-            .testTag("trainee_academics_tab"),
+        modifier = modifier.widthIn(max = 640.dp).fillMaxSize().testTag("trainee_academics_tab"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(AcademicsSubSection.entries) { sub ->
-                    val selected = activeSub == sub
-                    FilterChip(
-                        selected = selected,
-                        onClick = { activeSub = sub },
-                        label = { Text(sub.label) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = colors.skyAccent,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                            containerColor = colors.cardSurface,
-                            labelColor = colors.textMuted
-                        )
-                    )
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.borderSubtle),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.CleaningServices, contentDescription = null, tint = colors.amberAccent)
+                        Text("Today's Workshop Duty Turn (${dutyToday.dateKey})", style = MaterialTheme.typography.titleSmall)
+                    }
+                    Text(dutyToday.pairLabel, style = MaterialTheme.typography.titleMedium.copy(fontFamily = JetBrainsMonoFamily), color = colors.skyAccent)
+                    Text(dutyToday.note, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                 }
             }
         }
 
-        when (activeSub) {
-            AcademicsSubSection.LOG_BOOK -> {
-                item {
-                    val sub = data?.myAcademicSubmission
-                    var theoryTopic by remember(sub?.theoryTopic) { mutableStateOf(sub?.theoryTopic.orEmpty()) }
-                    var theoryStatus by remember(sub?.theoryStatus) { mutableStateOf(sub?.theoryStatus ?: "Completed") }
-                    var labJobName by remember(sub?.labJobName) { mutableStateOf(sub?.labJobName.orEmpty()) }
-                    var labStatus by remember(sub?.labStatus) { mutableStateOf(sub?.labStatus ?: "Completed") }
-                    var remarks by remember(sub?.remarks) { mutableStateOf(sub?.remarks.orEmpty()) }
-
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = colors.cardSurface,
-                        border = BorderStroke(1.dp, colors.borderSubtle),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Icon(Icons.AutoMirrored.Rounded.MenuBook, contentDescription = null, tint = colors.skyAccent)
-                                    Text("Theory & Lab Log Book", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                                }
-                                IconButton(onClick = onRefreshAcademicSubmission) {
-                                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh status", tint = colors.skyAccent)
-                                }
-                            }
-
-                            if (sub != null) {
-                                val stColor = when (sub.verificationStatus) {
-                                    AcademicSubmissionStatuses.FORWARDED_TO_PRINCIPAL -> colors.emeraldAccent
-                                    AcademicSubmissionStatuses.VERIFIED -> colors.skyAccent
-                                    else -> colors.amberAccent
-                                }
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = stColor.copy(alpha = 0.14f),
-                                    border = BorderStroke(1.dp, stColor.copy(alpha = 0.5f)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.padding(10.dp)) {
-                                        Text(
-                                            text = "Verification: ${sub.verificationStatus}",
-                                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
-                                            color = stColor
-                                        )
-                                        if (sub.instructorRemark.isNotBlank()) {
-                                            Text("Instructor Note: ${sub.instructorRemark}", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
-                                }
-                            }
-
-                            OutlinedTextField(
-                                value = theoryTopic,
-                                onValueChange = { theoryTopic = it },
-                                label = { Text("Theory Module / Notes Topic") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("Completed", "In Progress").forEach { st ->
-                                    FilterChip(
-                                        selected = theoryStatus == st,
-                                        onClick = { theoryStatus = st },
-                                        label = { Text("Theory: $st") }
-                                    )
-                                }
-                            }
-                            OutlinedTextField(
-                                value = labJobName,
-                                onValueChange = { labJobName = it },
-                                label = { Text("Workshop / Practical Job Name") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("Completed", "Pending Sign").forEach { st ->
-                                    FilterChip(
-                                        selected = labStatus == st,
-                                        onClick = { labStatus = st },
-                                        label = { Text("Lab: $st") }
-                                    )
-                                }
-                            }
-                            OutlinedTextField(
-                                value = remarks,
-                                onValueChange = { remarks = it },
-                                label = { Text("Remarks / Record Book Notes") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            if (uiState.academicActionMessage != null) {
-                                InlineAlertCard(uiState.academicActionMessage, isError = false)
-                            }
-                            if (uiState.academicActionError != null) {
-                                InlineAlertCard(uiState.academicActionError, isError = true)
-                            }
-
-                            Button(
-                                onClick = {
-                                    onDismissAcademicFeedback()
-                                    val today = AttendanceApiClient.todayIstDateString()
-                                    onSubmitAcademicRecord(theoryTopic, theoryStatus, today, labJobName, labStatus, today, remarks)
-                                },
-                                enabled = !uiState.isSubmittingAcademicRecord && (theoryTopic.isNotBlank() || labJobName.isNotBlank()),
-                                modifier = Modifier.fillMaxWidth().height(48.dp)
-                            ) {
-                                Text("Submit Record for Instructor Verification")
-                            }
-                        }
-                    }
-                }
-            }
-
-            AcademicsSubSection.TIMETABLE -> {
-                val periods = uiState.traineeCustomTimetable
-                    ?: data?.timetable?.ifEmpty { uiState.officialTimetableCache }
-                    ?: uiState.officialTimetableCache
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+        item {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.borderSubtle),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Rounded.CalendarMonth, contentDescription = null, tint = colors.skyAccent)
-                            Text("Weekly Trade Timetable", style = MaterialTheme.typography.titleMedium)
+                            Icon(Icons.Rounded.Schedule, contentDescription = null, tint = colors.skyAccent)
+                            Text("Weekly Trade Timetable", style = MaterialTheme.typography.titleSmall)
                         }
-                        if (uiState.traineeCustomTimetable != null) {
-                            OutlinedButton(onClick = onResetTimetableToOfficial) {
-                                Text("Reset Official", style = MaterialTheme.typography.labelSmall)
-                            }
+                        TextButton(onClick = { editTimetable = !editTimetable }) {
+                            Text(if (editTimetable) "Done" else "Customize")
                         }
                     }
-                }
-                if (uiState.timetableFeedbackMessage != null) {
-                    item { InlineAlertCard(uiState.timetableFeedbackMessage, isError = false) }
-                }
-                if (data?.traineeTimetableEditEnabled == true) {
-                    item {
-                        val editable = remember(periods) { mutableStateListOf<TimetablePeriod>().apply { addAll(periods) } }
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            editable.forEachIndexed { idx, p ->
-                                OutlinedTextField(
-                                    value = p.subject,
-                                    onValueChange = { editable[idx] = p.copy(subject = it) },
-                                    label = { Text("${p.day} • ${p.slot}") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { onDismissTimetableFeedback(); onSaveLocalTimetable(editable.toList()) }, modifier = Modifier.weight(1f)) {
-                                    Text("Save Personal")
-                                }
-                                Button(onClick = { onDismissTimetableFeedback(); onSubmitSharedTimetable(editable.toList()) }, modifier = Modifier.weight(1f)) {
-                                    Text("Submit Shared")
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    items(periods) { p ->
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = colors.cardSurface,
-                            border = BorderStroke(1.dp, colors.borderSubtle),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("${p.day} • ${p.slot}", style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.skyAccent)
-                                    Text(p.subject, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
-                                }
-                                Text(p.roomOrLab, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-                            }
-                        }
-                    }
-                }
-            }
 
-            AcademicsSubSection.DUTY_TURN -> {
-                val todayDuty = DutyRotationEngine.assignmentForDate(
-                    overrides = data?.dutyOverrides.orEmpty(),
-                    holidays = data?.holidays.orEmpty()
-                )
-                val myRoll = data?.roll?.toIntOrNull()
-                val isMyTurn = myRoll != null && (myRoll == todayDuty.firstRoll || myRoll == todayDuty.secondRoll)
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = if (isMyTurn) colors.amberContainer else colors.cardSurface,
-                        border = BorderStroke(1.5.dp, if (isMyTurn) colors.amberAccent else colors.borderSubtle),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Rounded.CleaningServices, contentDescription = null, tint = colors.amberAccent)
-                                Text("Today's Workshop Duty (${todayDuty.dateKey})", style = MaterialTheme.typography.titleMedium)
-                            }
-                            Text(
-                                text = todayDuty.pairLabel,
-                                style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
-                                color = if (isMyTurn) colors.amberAccent else colors.skyAccent
-                            )
-                            Text(
-                                text = if (isMyTurn) "Your Roll #${myRoll} is assigned for today's Workshop & Tool Crib Cleaning Duty!" else todayDuty.note,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-                val customDuty = data?.dutyItems.orEmpty()
-                if (customDuty.isNotEmpty()) {
-                    items(customDuty) { line ->
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = colors.cardSurface,
-                            border = BorderStroke(1.dp, colors.borderSubtle),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
-                        }
-                    }
-                }
-            }
-
-            AcademicsSubSection.PROJECTS -> {
-                val enabled = data?.projectGroupsEnabled ?: false
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = colors.cardSurface,
-                        border = BorderStroke(1.dp, colors.borderSubtle),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Icon(
-                                        imageVector = if (enabled) Icons.Rounded.Groups else Icons.Rounded.Lock,
-                                        contentDescription = null,
-                                        tint = if (enabled) colors.emeraldAccent else colors.amberAccent
-                                    )
-                                    Text("Electronics Project Groups", style = MaterialTheme.typography.titleMedium)
+                    editablePeriods.forEachIndexed { idx, period ->
+                        Surface(shape = RoundedCornerShape(10.dp), color = colors.cardElevated, modifier = Modifier.fillMaxWidth()) {
+                            if (!editTimetable) {
+                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("${period.day} • ${period.slot}", style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.skyAccent)
+                                    Text(period.subject, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(period.roomOrLab, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
                                 }
-                                IconButton(onClick = onRefreshProjectGroups) {
-                                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh groups", tint = colors.skyAccent)
-                                }
-                            }
-                            if (!enabled) {
-                                Text(
-                                    text = "Project group registration is currently locked by the Trade Instructor.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.textMuted
-                                )
                             } else {
-                                var title by remember { mutableStateOf("") }
-                                var membersInput by remember { mutableStateOf("") }
-                                var leaderName by remember { mutableStateOf(data?.name.orEmpty()) }
-                                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Project Title") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = membersInput, onValueChange = { membersInput = it }, label = { Text("Member Roll Numbers (e.g. 1, 5, 12)") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = leaderName, onValueChange = { leaderName = it }, label = { Text("Group Leader Name") }, modifier = Modifier.fillMaxWidth())
-                                if (uiState.projectGroupSaveMessage != null) InlineAlertCard(uiState.projectGroupSaveMessage, false)
-                                if (uiState.projectGroupSaveError != null) InlineAlertCard(uiState.projectGroupSaveError, true)
-                                Button(
-                                    onClick = {
-                                        onDismissProjectFeedback()
-                                        val rolls = membersInput.split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it in 1..23 }
-                                        onSaveProjectGroup(title, rolls, data?.roll?.toIntOrNull(), leaderName) {
-                                            title = ""
-                                            membersInput = ""
-                                        }
-                                    },
-                                    enabled = !uiState.isSavingProjectGroup && title.isNotBlank(),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) { Text("Register Project Group") }
+                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("${period.day} (${period.slot})", style = MaterialTheme.typography.labelSmall, color = colors.skyAccent)
+                                    OutlinedTextField(
+                                        value = period.subject,
+                                        onValueChange = { editablePeriods[idx] = period.copy(subject = it) },
+                                        label = { Text("Subject") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                             }
                         }
                     }
-                }
-                items(data?.projectGroups.orEmpty(), key = { "pg_${it.groupId}" }) { pg ->
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = colors.cardSurface,
-                        border = BorderStroke(1.dp, colors.borderSubtle),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(pg.projectTitle, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                            Text("Leader: ${pg.leaderName} (Roll #${pg.leaderRoll}) • Members: ${pg.memberRolls.joinToString(", ")}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+
+                    if (editTimetable) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onDismissTimetableFeedback(); onSaveLocalTimetable(editablePeriods.toList()) }, modifier = Modifier.weight(1f)) {
+                                Text("Save Locally")
+                            }
+                            OutlinedButton(onClick = { onDismissTimetableFeedback(); onResetTimetableToOfficial() }, modifier = Modifier.weight(1f)) {
+                                Text("Reset Official")
+                            }
                         }
+                        if (data?.traineeTimetableEditEnabled == true) {
+                            Button(onClick = { onDismissTimetableFeedback(); onSubmitSharedTimetable(editablePeriods.toList()) }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Publish to Shared Class Timetable")
+                            }
+                        }
+                    }
+                    if (uiState.timetableFeedbackMessage != null) {
+                        InlineAlertCard(uiState.timetableFeedbackMessage, isError = false)
+                    }
+                    if (uiState.timetableError != null) {
+                        InlineAlertCard(uiState.timetableError, isError = true)
+                    }
+                }
+            }
+        }
+
+        item {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.borderSubtle),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Rounded.AutoStories, contentDescription = null, tint = colors.emeraldAccent)
+                            Text("Trade Log Book & Record Submission", style = MaterialTheme.typography.titleSmall)
+                        }
+                        IconButton(onClick = onRefreshAcademicSubmission, enabled = !uiState.isLoadingAcademicSubmissions) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Log Book", tint = colors.skyAccent)
+                        }
+                    }
+                    if (activeSub != null) {
+                        Text(
+                            text = "Status: ${activeSub.verificationStatus}${if (activeSub.instructorRemark.isNotBlank()) " • Note: ${activeSub.instructorRemark}" else ""}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.emeraldAccent
+                        )
+                    }
+                    OutlinedTextField(value = theoryTopic, onValueChange = { theoryTopic = it }, label = { Text("Theory Chapter / Topic") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = theoryStatus, onValueChange = { theoryStatus = it }, label = { Text("Theory Notebook Status") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = labJobName, onValueChange = { labJobName = it }, label = { Text("Practical Job / Circuit Name") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = labStatus, onValueChange = { labStatus = it }, label = { Text("Practical Record Status") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = remarks, onValueChange = { remarks = it }, label = { Text("Remarks") }, modifier = Modifier.fillMaxWidth())
+
+                    AnimatedVisibility(visible = uiState.academicSubmitMessage != null) {
+                        InlineAlertCard(uiState.academicSubmitMessage.orEmpty(), isError = false)
+                    }
+                    AnimatedVisibility(visible = uiState.academicSubmitError != null) {
+                        InlineAlertCard(uiState.academicSubmitError.orEmpty(), isError = true)
+                    }
+
+                    Button(
+                        onClick = {
+                            onDismissAcademicFeedback()
+                            onSubmitAcademicRecord(theoryTopic, theoryStatus, theoryUpdatedDate, labJobName, labStatus, labSignedDate, remarks)
+                        },
+                        enabled = !uiState.isSubmittingAcademic && (theoryTopic.isNotBlank() || labJobName.isNotBlank()),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Text("Submit Log Book Update", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        item {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.borderSubtle),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Rounded.Groups, contentDescription = null, tint = colors.violetAccent)
+                            Text("Final Trade Project Groups", style = MaterialTheme.typography.titleSmall)
+                        }
+                        IconButton(onClick = onRefreshProjectGroups) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Groups", tint = colors.skyAccent)
+                        }
+                    }
+
+                    val groups = data?.projectGroups.orEmpty()
+                    if (groups.isEmpty()) {
+                        Text("No project groups registered yet.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                    } else {
+                        groups.forEach { grp ->
+                            Surface(shape = RoundedCornerShape(10.dp), color = colors.cardElevated, modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(grp.projectTitle, style = MaterialTheme.typography.titleSmall)
+                                    Text("Leader: #${grp.leaderRoll} ${grp.leaderName} • Members: ${grp.memberRolls.joinToString(", ")}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                                }
+                            }
+                        }
+                    }
+
+                    if (data?.projectGroupsEnabled == true) {
+                        HorizontalDivider(color = colors.borderSubtle)
+                        OutlinedTextField(value = projectTitle, onValueChange = { projectTitle = it }, label = { Text("Project Title") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = memberRollsText, onValueChange = { memberRollsText = it }, label = { Text("Member Roll Numbers (e.g. 1, 5, 12)") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = leaderRollText, onValueChange = { leaderRollText = it }, label = { Text("Leader Roll") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = leaderName, onValueChange = { leaderName = it }, label = { Text("Leader Name") }, modifier = Modifier.fillMaxWidth())
+                        if (uiState.projectGroupMessage != null) InlineAlertCard(uiState.projectGroupMessage, isError = false)
+                        if (uiState.projectGroupError != null) InlineAlertCard(uiState.projectGroupError, isError = true)
+                        Button(
+                            onClick = {
+                                onDismissProjectFeedback()
+                                val rolls = memberRollsText.split(",", " ").mapNotNull { it.trim().toIntOrNull() }
+                                onSaveProjectGroup(projectTitle, rolls, leaderRollText.toIntOrNull(), leaderName) {
+                                    projectTitle = ""
+                                }
+                            },
+                            enabled = !uiState.isSavingProjectGroup && projectTitle.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Save Project Group") }
+                    } else {
+                        Text("Project group editing is currently locked by Trade Instructor.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                     }
                 }
             }
@@ -761,153 +540,100 @@ fun TraineeNoticesAndNewsTab(
 ) {
     val colors = LocalItiColors.current
     val context = LocalContext.current
-    val notices = uiState.traineeData?.notices.orEmpty()
-    val newsItems = uiState.techNewsItems
-    val selectedLang = uiState.newsLanguageFilter
+    val data = uiState.traineeData
+    val holidays = data?.holidays.orEmpty()
+    val notices = data?.notices.orEmpty()
+    val newsList = uiState.techNews
 
     LazyColumn(
-        modifier = modifier
-            .widthIn(max = 640.dp)
-            .fillMaxSize()
-            .testTag("trainee_notices_news_tab"),
+        modifier = modifier.widthIn(max = 640.dp).fillMaxSize().testTag("trainee_notices_news_tab"),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Rounded.Campaign, contentDescription = null, tint = colors.skyAccent)
-                Text("College & Trade Notices (${notices.size})", style = MaterialTheme.typography.titleLarge)
+        if (holidays.isNotEmpty()) {
+            item { Text("Upcoming / Declared Holidays", style = MaterialTheme.typography.titleMedium) }
+            items(holidays, key = { "tr_hol_${it.id}_${it.date}" }) { h ->
+                ActiveHolidayBanner(holiday = h)
             }
         }
 
+        item { Text("Campus Notices (${notices.size})", style = MaterialTheme.typography.titleMedium) }
         if (notices.isEmpty()) {
             item {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = colors.cardSurface,
-                    border = BorderStroke(1.dp, colors.borderSubtle),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("No active notices.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(14.dp))
-                }
+                Text("No notices posted yet.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
             }
         } else {
-            items(notices, key = { "tr_ntc_${it.id}" }) { notice ->
+            items(notices, key = { "tr_ntc_${it.id}_${it.date}" }) { notice ->
                 NoticeCardItem(notice = notice, isUnread = false)
             }
         }
 
-        // Bilingual Tech News Section (English + മലയാളം)
         item {
             Spacer(Modifier.height(6.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Rounded.Newspaper, contentDescription = null, tint = colors.emeraldAccent)
-                    Column {
-                        Text("Electronics Tech News", style = MaterialTheme.typography.titleLarge)
-                        Text("Bilingual Feed (English & മലയാളം)", style = MaterialTheme.typography.bodySmall, color = colors.emeraldAccent)
-                    }
+                    Icon(Icons.Rounded.Newspaper, contentDescription = null, tint = colors.skyAccent)
+                    Text("Electronics Tech News (EN / ML)", style = MaterialTheme.typography.titleMedium)
                 }
                 IconButton(onClick = onRefreshTechNews, enabled = !uiState.isLoadingTechNews) {
-                    if (uiState.isLoadingTechNews) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh tech news", tint = colors.emeraldAccent)
-                    }
+                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Tech News", tint = colors.skyAccent)
                 }
             }
-        }
-
-        item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(NewsLanguageFilter.entries) { filter ->
-                    val selected = selectedLang == filter
                     FilterChip(
-                        selected = selected,
+                        selected = uiState.selectedNewsLanguage == filter,
                         onClick = { onSelectNewsLanguage(filter) },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.Translate, contentDescription = null, modifier = Modifier.size(15.dp))
-                        },
                         label = { Text(filter.label) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = colors.emeraldContainer,
-                            selectedLabelColor = colors.emeraldAccent,
-                            containerColor = colors.cardSurface,
-                            labelColor = colors.textMuted
-                        ),
-                        modifier = Modifier.testTag("news_lang_chip_${filter.name.lowercase()}")
+                        modifier = Modifier.testTag("news_lang_${filter.name.lowercase()}")
                     )
                 }
             }
         }
 
-        items(newsItems, key = { "news_${it.id}" }) { item ->
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = colors.cardSurface,
-                border = BorderStroke(1.dp, colors.borderSubtle),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(
-                            text = "${item.category.uppercase()} • ${item.source}",
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
-                            color = colors.emeraldAccent
-                        )
-                        if (item.publishedDate.isNotBlank()) {
-                            Text(item.publishedDate, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-                        }
-                    }
+        items(newsList, key = { "news_${it.id}" }) { news ->
+            TechNewsCard(
+                item = news,
+                language = uiState.selectedNewsLanguage,
+                onOpenUrl = { url -> ExternalUrlHelper.openUrl(context, url) }
+            )
+        }
+    }
+}
 
-                    if (selectedLang == NewsLanguageFilter.ENGLISH || selectedLang == NewsLanguageFilter.BOTH) {
-                        Text(
-                            text = item.titleEn,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = item.summaryEn,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textMuted
-                        )
-                    }
-
-                    if (selectedLang == NewsLanguageFilter.MALAYALAM || selectedLang == NewsLanguageFilter.BOTH) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = colors.skyContainer.copy(alpha = 0.55f),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(
-                                    text = item.titleMl,
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                    color = colors.skyAccent
-                                )
-                                Text(
-                                    text = item.summaryMl,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-
-                    if (item.url.isNotBlank()) {
-                        OutlinedButton(
-                            onClick = { ExternalUrlHelper.openUrl(context, item.url) },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Read Full Article", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
+@Composable
+private fun TechNewsCard(
+    item: TechNewsItem,
+    language: NewsLanguageFilter,
+    onOpenUrl: (String) -> Unit
+) {
+    val colors = LocalItiColors.current
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colors.cardSurface,
+        border = BorderStroke(1.dp, colors.borderSubtle),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("${item.category} • ${item.source}", style = MaterialTheme.typography.labelSmall, color = colors.skyAccent)
+                if (item.publishedDate.isNotBlank()) {
+                    Text(item.publishedDate, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+                }
+            }
+            if (language == NewsLanguageFilter.BOTH || language == NewsLanguageFilter.ENGLISH) {
+                Text(item.titleEn, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(item.summaryEn, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+            }
+            if (language == NewsLanguageFilter.BOTH || language == NewsLanguageFilter.MALAYALAM) {
+                Text(item.titleMl, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = colors.emeraldAccent)
+                Text(item.summaryMl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+            }
+            if (item.url.isNotBlank()) {
+                TextButton(onClick = { onOpenUrl(item.url) }, contentPadding = PaddingValues(0.dp)) {
+                    Text("Read Full Article", style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.size(4.dp))
+                    Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
                 }
             }
         }

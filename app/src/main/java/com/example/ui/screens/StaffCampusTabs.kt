@@ -2,9 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,23 +13,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Campaign
-import androidx.compose.material.icons.rounded.Celebration
-import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DirectionsBus
+import androidx.compose.material.icons.rounded.EventBusy
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PictureAsPdf
@@ -39,22 +34,20 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sensors
 import androidx.compose.material.icons.rounded.Undo
-import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -66,49 +59,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.AcademicSubmissionStatuses
 import com.example.data.AttendanceApiClient
+import com.example.data.AttendanceMath
 import com.example.data.DutyRotationEngine
 import com.example.data.LateGraceModes
 import com.example.data.ParentAlertTypes
 import com.example.data.PendingLeaveRequest
 import com.example.data.StaffAttendanceRecord
 import com.example.data.TimetablePeriod
-import com.example.notifications.AttendanceNotificationHelper
-import com.example.ui.components.AttendanceFinalizationBanner
+import com.example.data.TimetableStore
 import com.example.ui.components.AttendanceStatusPill
 import com.example.ui.components.DigitalSignaturePad
 import com.example.ui.components.InlineAlertCard
-import com.example.ui.components.NoticeCardItem
-import com.example.ui.components.WhatsAppBotHelper
 import com.example.ui.theme.JetBrainsMonoFamily
 import com.example.ui.theme.LocalItiColors
 import com.example.viewmodel.AppUiState
 
-private val REGISTER_FILTERS = listOf("ALL", "PRESENT", "HALF-DAY", "ABSENT", "OUT-PASS")
-private val NOTICE_CATEGORIES = listOf("General", "Exam", "Workshop", "Urgent", "DGT / NCVT", "Holiday")
-
-private enum class ApprovalsSubSection(val label: String) {
-    OUT_PASS("Out-Pass Approvals"),
-    ALERTS("Late & Parent Alerts"),
-    LOG_BOOKS("Log Books Verify")
-}
-
-private enum class CampusSubSection(val label: String) {
-    DUTY_TOOLS("Duty/Tools"),
-    TIMETABLE("Timetable"),
-    NOTICES("Notices"),
-    HOLIDAYS("Holidays"),
-    PROJECTS("Projects"),
-    ESP("ESP Terminal")
-}
+private val STATUS_FILTERS = listOf("ALL", "PRESENT", "ABSENT", "HALF", "BELOW 80%")
 
 @Composable
 fun AttendanceRegisterTab(
@@ -129,30 +102,23 @@ fun AttendanceRegisterTab(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalItiColors.current
-    val staffData = uiState.staffData
-    val list = staffData?.allAttendance.orEmpty()
+    val data = uiState.staffData
+    val query = uiState.registerSearchQuery.trim()
+    val filter = uiState.registerStatusFilter
 
-    val filtered = remember(list, uiState.registerSearchQuery, uiState.registerStatusFilter) {
-        list.filter { rec ->
-            val matchQuery = uiState.registerSearchQuery.isBlank() ||
-                rec.name.contains(uiState.registerSearchQuery, ignoreCase = true) ||
-                rec.roll.contains(uiState.registerSearchQuery, ignoreCase = true)
-            val matchFilter = uiState.registerStatusFilter == "ALL" ||
-                rec.todayStatus.contains(uiState.registerStatusFilter, ignoreCase = true)
-            matchQuery && matchFilter
-        }.sortedBy { it.roll.toIntOrNull() ?: 99 }
-    }
-
-    var warningTarget by remember { mutableStateOf<StaffAttendanceRecord?>(null) }
-    var warningMsg by remember { mutableStateOf("") }
+    var graceTarget by remember { mutableStateOf<StaffAttendanceRecord?>(null) }
+    var graceCutoff by remember { mutableStateOf("09:45 AM") }
+    var graceNote by remember { mutableStateOf("") }
+    var alertTarget by remember { mutableStateOf<StaffAttendanceRecord?>(null) }
+    var alertMsg by remember { mutableStateOf("") }
 
     if (uiState.duplicatePunchPrompt != null) {
         val dup = uiState.duplicatePunchPrompt
         AlertDialog(
             onDismissRequest = onDismissDuplicatePunch,
-            title = { Text("Duplicate Punch Guard") },
+            title = { Text("Override Existing Status?") },
             text = {
-                Text("Roll #${dup.roll} (${dup.studentName}) is already marked ${dup.currentStatus}. Override with ${dup.requestedStatus}?")
+                Text("${dup.studentName} (Roll #${dup.roll}) is already marked ${dup.currentStatus}. Override with ${dup.requestedStatus}?")
             },
             confirmButton = {
                 Button(onClick = onConfirmDuplicatePunch) { Text("Override") }
@@ -163,174 +129,182 @@ fun AttendanceRegisterTab(
         )
     }
 
-    if (warningTarget != null) {
-        val t = warningTarget!!
+    if (graceTarget != null) {
+        val target = graceTarget!!
         AlertDialog(
-            onDismissRequest = { warningTarget = null },
-            title = { Text("Send Parent Alert • Roll #${t.roll}") },
+            onDismissRequest = { graceTarget = null },
+            title = { Text("Late Grace: ${target.name} (#${target.roll})") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = graceCutoff, onValueChange = { graceCutoff = it }, label = { Text("Custom Cutoff (e.g. 09:45 AM)") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = graceNote, onValueChange = { graceNote = it }, label = { Text("Note (e.g. Bus Delay)") }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onSetLateGrace(target.roll, LateGraceModes.EXEMPT_TODAY, "", graceNote); graceTarget = null }, modifier = Modifier.weight(1f)) {
+                            Text("Exempt Today")
+                        }
+                        OutlinedButton(onClick = { onSetLateGrace(target.roll, LateGraceModes.CLEAR, "", ""); graceTarget = null }, modifier = Modifier.weight(1f)) {
+                            Text("Clear")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { onSetLateGrace(target.roll, LateGraceModes.CUSTOM_CUTOFF, graceCutoff, graceNote); graceTarget = null }) {
+                    Text("Apply Cutoff")
+                }
+            },
+            dismissButton = { TextButton(onClick = { graceTarget = null }) { Text("Close") } }
+        )
+    }
+
+    if (alertTarget != null) {
+        val target = alertTarget!!
+        AlertDialog(
+            onDismissRequest = { alertTarget = null },
+            title = { Text("Notify Parent of #${target.roll}") },
             text = {
                 OutlinedTextField(
-                    value = warningMsg,
-                    onValueChange = { warningMsg = it },
-                    label = { Text("Warning / Attendance Message") },
+                    value = alertMsg,
+                    onValueChange = { alertMsg = it },
+                    label = { Text("Urgent Message to Parent") },
                     minLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = {
                 Button(
-                    enabled = warningMsg.isNotBlank(),
+                    enabled = alertMsg.isNotBlank(),
                     onClick = {
-                        onSendInstantParentAlert(t.roll, t.name, ParentAlertTypes.INSTRUCTOR_WARNING, warningMsg)
-                        warningMsg = ""
-                        warningTarget = null
+                        onSendInstantParentAlert(target.roll, target.name, ParentAlertTypes.INSTRUCTOR_WARNING, alertMsg)
+                        alertMsg = ""
+                        alertTarget = null
                     }
                 ) { Text("Send Alert") }
             },
-            dismissButton = {
-                TextButton(onClick = { warningTarget = null }) { Text("Cancel") }
-            }
+            dismissButton = { TextButton(onClick = { alertTarget = null }) { Text("Cancel") } }
         )
     }
 
+    val filtered = remember(data?.allAttendance, query, filter) {
+        data?.allAttendance.orEmpty().filter { rec ->
+            val matchesQuery = query.isBlank() ||
+                rec.name.contains(query, ignoreCase = true) ||
+                rec.roll.contains(query, ignoreCase = true)
+            val upper = rec.todayStatus.uppercase()
+            val matchesFilter = when (filter) {
+                "PRESENT" -> upper == "PRESENT" || upper == "LATE" || upper == "ON-DUTY"
+                "ABSENT" -> upper == "ABSENT"
+                "HALF" -> upper.contains("HALF") || upper.contains("OUT-PASS")
+                "BELOW 80%" -> rec.total > 0 && rec.pct < AttendanceMath.EXAM_THRESHOLD_PCT
+                else -> true
+            }
+            matchesQuery && matchesFilter
+        }
+    }
+
     LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("staff_attendance_register_tab"),
+        modifier = modifier.fillMaxSize().testTag("staff_register_tab"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (staffData != null) {
-            item {
-                AttendanceFinalizationBanner(
-                    attendanceClosed = staffData.attendanceClosed,
-                    attendanceDate = staffData.attendanceDate,
-                    closedAt = staffData.closedAt
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.widthIn(max = 720.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = onBulkMorningRollCall,
+                        enabled = !uiState.isApplyingBulkRollCall,
+                        modifier = Modifier.weight(1f).testTag("bulk_roll_call_button")
+                    ) {
+                        Text(if (uiState.isApplyingBulkRollCall) "Applying..." else "Bulk Present", maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = { onDismissCloseFeedback(); onConfirmCloseAttendance() },
+                        enabled = !uiState.isClosingAttendance,
+                        modifier = Modifier.weight(1f).testTag("close_attendance_button")
+                    ) {
+                        Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (data?.attendanceClosed == true) "Closed" else "Close Day", maxLines = 1)
+                    }
+                    OutlinedButton(onClick = onExportPdf, enabled = !uiState.isExportingPdf) {
+                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = "Export Server PDF", modifier = Modifier.size(16.dp))
+                    }
+                }
+
+                if (uiState.closeAttendanceMessage != null) InlineAlertCard(uiState.closeAttendanceMessage, isError = false)
+                if (uiState.closeAttendanceError != null) InlineAlertCard(uiState.closeAttendanceError, isError = true)
+                if (uiState.manualPunchMessage != null) InlineAlertCard(uiState.manualPunchMessage, isError = false)
+                if (uiState.manualPunchError != null) InlineAlertCard(uiState.manualPunchError, isError = true)
+
+                OutlinedTextField(
+                    value = uiState.registerSearchQuery,
+                    onValueChange = onSearchChanged,
+                    label = { Text("Search Trainee Name or Roll #") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("register_search_input")
                 )
-            }
-        }
 
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onBulkMorningRollCall,
-                    enabled = !uiState.isRunningRollCallOp,
-                    modifier = Modifier.weight(1f).testTag("bulk_roll_call_button")
-                ) {
-                    Text("Bulk Present", style = MaterialTheme.typography.labelSmall)
-                }
-                Button(
-                    onClick = { onDismissCloseFeedback(); onConfirmCloseAttendance() },
-                    enabled = !uiState.isClosingAttendance && !(staffData?.attendanceClosed ?: false),
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.emeraldAccent, contentColor = MaterialTheme.colorScheme.onSecondary),
-                    modifier = Modifier.weight(1.2f).testTag("close_attendance_button")
-                ) {
-                    Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (staffData?.attendanceClosed == true) "Closed" else "Close Day", style = MaterialTheme.typography.labelSmall)
-                }
-                OutlinedButton(
-                    onClick = onExportPdf,
-                    enabled = !uiState.isExportingPdf,
-                    modifier = Modifier.weight(0.8f).testTag("register_export_pdf_button")
-                ) {
-                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(15.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(STATUS_FILTERS) { st ->
+                        FilterChip(
+                            selected = uiState.registerStatusFilter == st,
+                            onClick = { onStatusFilterChanged(st) },
+                            label = { Text(st) }
+                        )
+                    }
                 }
             }
         }
 
-        if (uiState.closeAttendanceMessage != null) item { InlineAlertCard(uiState.closeAttendanceMessage, false) }
-        if (uiState.closeAttendanceError != null) item { InlineAlertCard(uiState.closeAttendanceError, true) }
-        if (uiState.rollCallFeedbackMessage != null) item { InlineAlertCard(uiState.rollCallFeedbackMessage, false) }
-        if (uiState.rollCallError != null) item { InlineAlertCard(uiState.rollCallError, true) }
-
-        item {
-            OutlinedTextField(
-                value = uiState.registerSearchQuery,
-                onValueChange = onSearchChanged,
-                label = { Text("Search Roll # or Trainee Name") },
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = colors.skyAccent) },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().testTag("register_search_input")
-            )
-        }
-
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(REGISTER_FILTERS) { filter ->
-                    FilterChip(
-                        selected = uiState.registerStatusFilter == filter,
-                        onClick = { onStatusFilterChanged(filter) },
-                        label = { Text(filter, style = MaterialTheme.typography.labelSmall) }
-                    )
-                }
-            }
-        }
-
-        items(filtered, key = { "reg_${it.roll}" }) { rec ->
-            val hasUndo = uiState.recentUndoByRoll.containsKey(rec.roll)
-            val pctColor = when {
-                rec.pct >= 80 -> colors.emeraldAccent
-                rec.pct >= 75 -> colors.amberAccent
-                else -> colors.redAccent
-            }
+        items(filtered, key = { "st_reg_${it.roll}" }) { rec ->
+            val pctColor = if (rec.pct >= AttendanceMath.EXAM_THRESHOLD_PCT) colors.emeraldAccent else colors.redAccent
+            val undoEntry = uiState.undoMap[rec.roll]
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = colors.cardSurface,
                 border = BorderStroke(1.dp, colors.borderSubtle),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
+                            Text("#${rec.roll.padStart(2, '0')} ${rec.name}", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                text = "Roll #${rec.roll.padStart(2, '0')} • ${rec.name}",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "In: ${rec.inT} • Out: ${rec.outT} • ${rec.pct}%",
+                                text = "In: ${rec.inT} • Out: ${rec.outT} • ${rec.present}P/${rec.half}H/${rec.total}D",
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                                color = pctColor
+                                color = colors.textMuted
                             )
                         }
-                        AttendanceStatusPill(status = rec.todayStatus)
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("PRESENT" to "P", "HALF-DAY" to "HD", "LATE" to "L", "ON-DUTY" to "OD").forEach { (status, short) ->
-                            OutlinedButton(
-                                onClick = { onManualPunch(rec.roll, status) },
-                                enabled = uiState.manualPunchingRoll != rec.roll,
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                modifier = Modifier.weight(1f).height(36.dp)
-                            ) {
-                                Text(short, style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold))
-                            }
-                        }
-                        if (hasUndo && uiState.remoteUiConfig.showUndoButton) {
-                            IconButton(onClick = { onUndoAttendance(rec.roll) }, modifier = Modifier.size(36.dp)) {
-                                Icon(Icons.Rounded.Undo, contentDescription = "Undo", tint = colors.amberAccent, modifier = Modifier.size(18.dp))
-                            }
-                        } else {
-                            IconButton(onClick = { onResetAttendanceToAbsent(rec.roll, rec.name) }, modifier = Modifier.size(36.dp)) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Mark Absent", tint = colors.redAccent, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                        IconButton(onClick = { warningTarget = rec; warningMsg = "Attendance follow-up needed for ${rec.name}." }, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Rounded.NotificationsActive, contentDescription = "Warn Parent", tint = colors.skyAccent, modifier = Modifier.size(18.dp))
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            AttendanceStatusPill(rec.todayStatus)
+                            Text("${rec.pct}%", style = MaterialTheme.typography.labelMedium.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = pctColor)
                         }
                     }
 
-                    if (rec.lateGraceMode.isNotBlank()) {
-                        Text("Late Grace: ${rec.lateGraceMode} (${rec.lateCutoff})", style = MaterialTheme.typography.labelSmall, color = colors.amberAccent)
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { onSetLateGrace(rec.roll, LateGraceModes.EXEMPT_TODAY, "", "Instructor granted today") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                                Text("Grant Late Grace", style = MaterialTheme.typography.labelSmall, color = colors.skyAccent)
-                            }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { onManualPunch(rec.roll, "PRESENT") }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
+                            Text("P", style = MaterialTheme.typography.labelMedium, color = colors.emeraldAccent)
+                        }
+                        OutlinedButton(onClick = { onManualPunch(rec.roll, "HALF-DAY") }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
+                            Text("HD", style = MaterialTheme.typography.labelMedium, color = colors.amberAccent)
+                        }
+                        OutlinedButton(onClick = { onResetAttendanceToAbsent(rec.roll, rec.name) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
+                            Text("A", style = MaterialTheme.typography.labelMedium, color = colors.redAccent)
+                        }
+                        OutlinedButton(onClick = { graceTarget = rec }, modifier = Modifier.weight(1.2f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
+                            Text("Grace", style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedButton(onClick = { alertTarget = rec }, modifier = Modifier.weight(1.2f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
+                            Text("Alert", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    if (undoEntry != null && uiState.remoteAppConfig.undoEnabled && uiState.remoteUiConfig.showUndoButton) {
+                        TextButton(onClick = { onUndoAttendance(rec.roll) }, contentPadding = PaddingValues(0.dp)) {
+                            Icon(Icons.Rounded.Undo, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Undo (Restore ${undoEntry.previousStatus})", style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -352,162 +326,158 @@ fun ApprovalsAndAlertsTab(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalItiColors.current
-    val context = LocalContext.current
-    var activeSub by remember { mutableStateOf(ApprovalsSubSection.OUT_PASS) }
-
-    val pendingLeaves = uiState.staffData?.pendingLeaves.orEmpty()
-    val runningLate = uiState.staffData?.runningLateAlerts.orEmpty()
-    val parentAlerts = uiState.staffData?.parentAlerts.orEmpty()
-    val submissions = uiState.staffData?.academicSubmissions.orEmpty()
-
-    var approvingLeave by remember { mutableStateOf<PendingLeaveRequest?>(null) }
-    var rejectingLeave by remember { mutableStateOf<PendingLeaveRequest?>(null) }
+    val data = uiState.staffData
+    var approvingReq by remember { mutableStateOf<PendingLeaveRequest?>(null) }
+    var rejectingReq by remember { mutableStateOf<PendingLeaveRequest?>(null) }
     var rejectReason by remember { mutableStateOf("") }
     var sigData by remember { mutableStateOf("") }
-    var sigKey by remember { mutableIntStateOf(0) }
+    var sigResetKey by remember { mutableIntStateOf(0) }
 
-    if (approvingLeave != null) {
-        val req = approvingLeave!!
+    if (approvingReq != null) {
+        val req = approvingReq!!
         AlertDialog(
-            onDismissRequest = { approvingLeave = null },
-            title = { Text("Approve & Digitally Sign Out-Pass") },
+            onDismissRequest = { approvingReq = null },
+            title = { Text("Sign & Approve Leave (${req.reqId})") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("${req.name} (Roll #${req.roll}) • ${req.type}\nWindow: ${req.timeWindow}\nReason: ${req.reason}", style = MaterialTheme.typography.bodySmall)
-                    DigitalSignaturePad(defaultSignerName = "Trade Instructor (EM)", resetKey = sigKey, onSignatureChanged = { sigData = it }, tagPrefix = "staff_leave_sig")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${req.name} (#${req.roll}) • ${req.type} • ${req.timeWindow}", style = MaterialTheme.typography.bodySmall)
+                    DigitalSignaturePad(
+                        defaultSignerName = "Trade Instructor (EM)",
+                        resetKey = sigResetKey,
+                        onSignatureChanged = { sigData = it },
+                        title = "Instructor Signature",
+                        tagPrefix = "sir_sig"
+                    )
                 }
             },
             confirmButton = {
-                Button(enabled = sigData.isNotBlank(), onClick = {
-                    onDismissApprovalFeedback()
-                    onApproveAndSign(req.reqId, sigData)
-                    approvingLeave = null
-                    sigData = ""
-                    sigKey++
-                }) { Text("Sign & Forward") }
+                Button(
+                    enabled = sigData.isNotBlank() && !uiState.isSigningApproval,
+                    onClick = {
+                        onDismissApprovalFeedback()
+                        onApproveAndSign(req.reqId, sigData)
+                        approvingReq = null
+                        sigData = ""
+                        sigResetKey++
+                    }
+                ) { Text("Approve & Forward") }
             },
-            dismissButton = { TextButton(onClick = { approvingLeave = null }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { approvingReq = null }) { Text("Cancel") } }
         )
     }
 
-    if (rejectingLeave != null) {
-        val req = rejectingLeave!!
+    if (rejectingReq != null) {
+        val req = rejectingReq!!
         AlertDialog(
-            onDismissRequest = { rejectingLeave = null },
-            title = { Text("Reject Leave Request") },
-            text = { OutlinedTextField(value = rejectReason, onValueChange = { rejectReason = it }, label = { Text("Rejection Reason") }, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = {
-                Button(enabled = rejectReason.isNotBlank(), onClick = {
-                    onDismissApprovalFeedback()
-                    onRejectLeave(req.reqId, rejectReason)
-                    rejectReason = ""
-                    rejectingLeave = null
-                }, colors = ButtonDefaults.buttonColors(containerColor = colors.redAccent)) { Text("Reject") }
+            onDismissRequest = { rejectingReq = null },
+            title = { Text("Reject Leave (${req.reqId})") },
+            text = {
+                OutlinedTextField(value = rejectReason, onValueChange = { rejectReason = it }, label = { Text("Rejection Reason") }, modifier = Modifier.fillMaxWidth())
             },
-            dismissButton = { TextButton(onClick = { rejectingLeave = null }) { Text("Cancel") } }
+            confirmButton = {
+                Button(
+                    enabled = rejectReason.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.redAccent),
+                    onClick = {
+                        onDismissApprovalFeedback()
+                        onRejectLeave(req.reqId, rejectReason)
+                        rejectReason = ""
+                        rejectingReq = null
+                    }
+                ) { Text("Reject") }
+            },
+            dismissButton = { TextButton(onClick = { rejectingReq = null }) { Text("Cancel") } }
         )
     }
+
+    val pending = data?.pendingLeaves.orEmpty()
+    val lateAlerts = data?.runningLateAlerts.orEmpty()
+    val parentAlerts = data?.parentAlerts.orEmpty()
+    val submissions = uiState.academicSubmissions.ifEmpty { data?.academicSubmissions.orEmpty() }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().testTag("staff_approvals_tab"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(ApprovalsSubSection.entries) { sub ->
-                    FilterChip(
-                        selected = activeSub == sub,
-                        onClick = { activeSub = sub },
-                        label = {
-                            val badge = when (sub) {
-                                ApprovalsSubSection.OUT_PASS -> pendingLeaves.size
-                                ApprovalsSubSection.ALERTS -> runningLate.size + parentAlerts.size
-                                ApprovalsSubSection.LOG_BOOKS -> submissions.size
-                            }
-                            Text("${sub.label} ($badge)")
+        if (uiState.approvalSuccessMessage != null) item { InlineAlertCard(uiState.approvalSuccessMessage, isError = false) }
+        if (uiState.approvalError != null) item { InlineAlertCard(uiState.approvalError, isError = true) }
+
+        item { Text("Pending Out-Pass / Leave Requests (${pending.size})", style = MaterialTheme.typography.titleMedium) }
+        if (pending.isEmpty()) {
+            item { Text("No pending leave requests.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted) }
+        } else {
+            items(pending, key = { "st_lv_${it.reqId}" }) { req ->
+                Surface(shape = RoundedCornerShape(16.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("#${req.roll} ${req.name} • ${req.type}", style = MaterialTheme.typography.titleSmall)
+                        Text("${req.date} • ${req.timeWindow} • ${req.reason}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { approvingReq = req }, modifier = Modifier.weight(1f)) { Text("Sign & Approve") }
+                            OutlinedButton(onClick = { rejectingReq = req }, modifier = Modifier.weight(1f)) { Text("Reject", color = colors.redAccent) }
                         }
-                    )
+                    }
                 }
             }
         }
 
-        if (uiState.approvalSuccessMessage != null) item { InlineAlertCard(uiState.approvalSuccessMessage, false) }
-        if (uiState.approvalError != null) item { InlineAlertCard(uiState.approvalError, true) }
-
-        when (activeSub) {
-            ApprovalsSubSection.OUT_PASS -> {
-                if (pendingLeaves.isEmpty()) {
-                    item { InlineAlertCard("No pending out-pass or leave approvals.", false) }
-                } else {
-                    items(pendingLeaves, key = { "st_lv_${it.reqId}" }) { req ->
-                        Surface(shape = RoundedCornerShape(16.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Roll #${req.roll} • ${req.name}", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                                Text("${req.type} • ${req.timeWindow} • ${req.date}", style = MaterialTheme.typography.labelMedium, color = colors.skyAccent)
-                                Text(req.reason, style = MaterialTheme.typography.bodySmall)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(onClick = { rejectingLeave = req }, modifier = Modifier.weight(1f)) { Text("Reject", color = colors.redAccent) }
-                                    Button(onClick = { approvingLeave = req }, modifier = Modifier.weight(1.2f)) { Text("Sign & Approve") }
-                                }
-                            }
-                        }
+        if (lateAlerts.isNotEmpty()) {
+            item { Text("Running Late Alerts (${lateAlerts.size})", style = MaterialTheme.typography.titleMedium) }
+            items(lateAlerts, key = { "st_rl_${it.id}" }) { rl ->
+                Surface(shape = RoundedCornerShape(14.dp), color = colors.amberContainer, border = BorderStroke(1.dp, colors.amberAccent.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("#${rl.roll} ${rl.studentName} • ETA ${rl.expectedArrival}", style = MaterialTheme.typography.titleSmall, color = colors.amberAccent)
+                        Text("${rl.reasonCategory}: ${rl.details}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
+        }
 
-            ApprovalsSubSection.ALERTS -> {
-                items(runningLate, key = { "st_rl_${it.id}_${it.roll}" }) { late ->
-                    Surface(shape = RoundedCornerShape(16.dp), color = colors.cardSurface, border = BorderStroke(1.5.dp, colors.amberAccent.copy(alpha = 0.6f)), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(Icons.Rounded.DirectionsBus, contentDescription = null, tint = colors.amberAccent, modifier = Modifier.size(16.dp))
-                                Text("RUNNING LATE • Roll #${late.roll} ${late.studentName}", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                            }
-                            Text("ETA: ${late.expectedArrival} • ${late.reasonCategory}", style = MaterialTheme.typography.labelMedium, color = colors.amberAccent)
-                            if (late.details.isNotBlank()) Text(late.details, style = MaterialTheme.typography.bodySmall)
-                            OutlinedButton(onClick = {
-                                WhatsAppBotHelper.openWhatsAppBot(context, "Govt. ITI Ranni (EM) • Noted delay for ${late.studentName} (Roll #${late.roll}). Report to Instructor on arrival.")
-                            }) {
-                                Icon(Icons.Rounded.Chat, contentDescription = null, modifier = Modifier.size(15.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Acknowledge via WhatsApp", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                }
-                items(parentAlerts, key = { "st_pa_${it.id}_${it.roll}" }) { alert ->
-                    ParentAlertCard(alert = alert)
-                }
-                if (runningLate.isEmpty() && parentAlerts.isEmpty()) {
-                    item { InlineAlertCard("No active Running Late or Parent alerts.", false) }
+        if (parentAlerts.isNotEmpty()) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Rounded.NotificationsActive, contentDescription = null, tint = colors.redAccent)
+                    Text("Parent Alerts (${parentAlerts.size})", style = MaterialTheme.typography.titleMedium)
                 }
             }
-
-            ApprovalsSubSection.LOG_BOOKS -> {
-                item {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(onClick = onRefreshAcademicSubmissions) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Refresh Records")
-                        }
-                        Button(onClick = onForwardAllAcademicToPrincipal, enabled = !uiState.isUpdatingAcademicSubmission) {
-                            Text("Forward All Verified")
-                        }
+            items(parentAlerts, key = { "st_pa_${it.id}" }) { al ->
+                Surface(shape = RoundedCornerShape(14.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("#${al.roll} ${al.studentName} • ${al.alertType}", style = MaterialTheme.typography.titleSmall, color = colors.redAccent)
+                        Text("${al.date} ${al.time}: ${al.message}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                items(submissions, key = { "st_sub_${it.id}_${it.roll}" }) { sub ->
-                    var remark by remember(sub.id) { mutableStateOf(sub.instructorRemark) }
-                    Surface(shape = RoundedCornerShape(16.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Roll #${sub.roll} • ${sub.studentName} (${sub.verificationStatus})", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                            Text("Theory: ${sub.theoryTopic} (${sub.theoryStatus}) • Lab: ${sub.labJobName} (${sub.labStatus})", style = MaterialTheme.typography.bodySmall)
-                            OutlinedTextField(value = remark, onValueChange = { remark = it }, label = { Text("Instructor Remark") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { onVerifyAcademicSubmission(sub.roll, sub.id, remark) }, modifier = Modifier.weight(1f)) { Text("Verify") }
-                                Button(onClick = { onForwardSingleAcademicToPrincipal(sub.roll) }, modifier = Modifier.weight(1f)) { Text("Send Principal") }
-                            }
+            }
+        }
+
+        item {
+            HorizontalDivider(color = colors.borderSubtle)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Trainee Log Books (${submissions.size})", style = MaterialTheme.typography.titleMedium)
+                Row {
+                    IconButton(onClick = onRefreshAcademicSubmissions) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Log Books", tint = colors.skyAccent)
+                    }
+                    TextButton(onClick = onForwardAllAcademicToPrincipal) { Text("Forward All Verified") }
+                }
+            }
+        }
+
+        items(submissions, key = { "st_ac_${it.id}_${it.roll}" }) { sub ->
+            var remark by remember(sub.id) { mutableStateOf(sub.instructorRemark) }
+            Surface(shape = RoundedCornerShape(14.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("#${sub.roll} ${sub.studentName} • ${sub.verificationStatus}", style = MaterialTheme.typography.titleSmall)
+                    Text("Theory: ${sub.theoryTopic} (${sub.theoryStatus}) • Lab: ${sub.labJobName} (${sub.labStatus})", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                    if (sub.verificationStatus == AcademicSubmissionStatuses.PENDING_VERIFICATION) {
+                        OutlinedTextField(value = remark, onValueChange = { remark = it }, label = { Text("Verification Remark") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onVerifyAcademicSubmission(sub.roll, sub.id, remark) }, modifier = Modifier.weight(1f)) { Text("Verify") }
+                            OutlinedButton(onClick = { onForwardSingleAcademicToPrincipal(sub.roll) }, modifier = Modifier.weight(1f)) { Text("Forward") }
+                        }
+                    } else if (!sub.sentToPrincipal) {
+                        OutlinedButton(onClick = { onForwardSingleAcademicToPrincipal(sub.roll) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Forward Verified Log Book to Principal")
                         }
                     }
                 }
@@ -530,6 +500,7 @@ fun ShopFloorControlTab(
     val data = uiState.staffData
     val overrides = data?.scanOverrides
     var manualRoll by remember { mutableStateOf("") }
+    var endTime by remember { mutableStateOf("05:00 PM") }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().testTag("staff_shop_floor_tab"),
@@ -539,43 +510,59 @@ fun ShopFloorControlTab(
         item {
             Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("ESP8266 Scanner Overrides", style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.Build, contentDescription = null, tint = colors.amberAccent)
+                        Text(uiState.remoteUiConfig.shopFloorTabTitle, style = MaterialTheme.typography.titleMedium)
+                    }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Allow Early Class Logout", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text("Allow Early Class Logout Override", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                         Switch(checked = overrides?.earlyClassLogoutEnabled ?: false, onCheckedChange = onToggleEarlyClassLogout)
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Release Shop Floor Now", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text("Release Post-3PM Shop Floor Now", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                         Switch(checked = overrides?.shopFloorReleaseNowEnabled ?: false, onCheckedChange = onToggleShopFloorReleaseNow)
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(value = manualRoll, onValueChange = { manualRoll = it.filter(Char::isDigit).take(2) }, label = { Text("Roll #1-23") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
-                        Button(enabled = manualRoll.toIntOrNull() in 1..23, onClick = { onAddOrRemoveShopFloor(manualRoll, "ADD", "POST_3PM", "05:00 PM"); manualRoll = "" }) { Text("Add") }
+                    if (uiState.shopFloorMessage != null) InlineAlertCard(uiState.shopFloorMessage, isError = false)
+                    if (uiState.shopFloorError != null) InlineAlertCard(uiState.shopFloorError, isError = true)
+                }
+            }
+        }
+
+        item {
+            Surface(shape = RoundedCornerShape(16.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Add Trainee to Post-3PM Remedial", style = MaterialTheme.typography.titleSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = manualRoll, onValueChange = { manualRoll = it.filter(Char::isDigit).take(2) }, label = { Text("Roll #") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = endTime, onValueChange = { endTime = it }, label = { Text("End Time") }, modifier = Modifier.weight(1.4f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(enabled = manualRoll.isNotBlank(), onClick = { onAddOrRemoveShopFloor(manualRoll, "ADD", "POST_3PM", endTime); manualRoll = "" }, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Rounded.AddCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Assign")
+                        }
+                        OutlinedButton(enabled = manualRoll.isNotBlank(), onClick = { onAddOrRemoveShopFloor(manualRoll, "REMOVE", "POST_3PM", endTime); manualRoll = "" }, modifier = Modifier.weight(1f)) {
+                            Text("Remove")
+                        }
                     }
                 }
             }
         }
 
-        if (uiState.shopFloorActionMessage != null) item { InlineAlertCard(uiState.shopFloorActionMessage, false) }
-        if (uiState.shopFloorActionError != null) item { InlineAlertCard(uiState.shopFloorActionError, true) }
-
         val list = data?.shopFloorList.orEmpty()
-        item { Text("Post-3PM Shop Floor Roster (${list.size})", style = MaterialTheme.typography.titleMedium) }
-        items(list, key = { "sf_${it.id}_${it.roll}" }) { entry ->
-            Surface(shape = RoundedCornerShape(16.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Roll #${entry.roll} • ${entry.name}", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                        Text("${entry.attendancePct}%", style = MaterialTheme.typography.labelMedium.copy(fontFamily = JetBrainsMonoFamily), color = colors.amberAccent)
-                    }
-                    Text("${entry.assignedReason} • End: ${entry.scheduledEndTime} • ${entry.status}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        item { Text("Assigned Shop Floor Trainees (${list.size})", style = MaterialTheme.typography.titleMedium) }
+        items(list, key = { "st_sf_${it.id}_${it.roll}" }) { sf ->
+            Surface(shape = RoundedCornerShape(14.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("#${sf.roll} ${sf.name} (${sf.attendancePct}%)", style = MaterialTheme.typography.titleSmall)
+                    Text("${sf.assignedReason} • End: ${sf.scheduledEndTime} • Status: ${sf.status}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onRecordCardLogout(entry.roll) }, modifier = Modifier.weight(1f)) { Text("Card Out", style = MaterialTheme.typography.labelSmall) }
-                        Button(onClick = { onVerifyLogout(entry.roll, entry.date) }, enabled = !entry.verifiedByInstructor, modifier = Modifier.weight(1f)) {
-                            Text(if (entry.verifiedByInstructor) "Verified" else "Verify", style = MaterialTheme.typography.labelSmall)
-                        }
-                        TextButton(onClick = { onAddOrRemoveShopFloor(entry.roll, "REMOVE", entry.sessionType, entry.scheduledEndTime) }) {
-                            Text("Remove", color = colors.redAccent, style = MaterialTheme.typography.labelSmall)
+                        OutlinedButton(onClick = { onRecordCardLogout(sf.roll) }, modifier = Modifier.weight(1f)) { Text("Card Out") }
+                        Button(onClick = { onVerifyLogout(sf.roll, sf.date) }, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Rounded.Verified, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Verify")
                         }
                     }
                 }
@@ -602,226 +589,177 @@ fun CampusManagementTab(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalItiColors.current
-    val context = LocalContext.current
-    var activeSection by remember { mutableStateOf(CampusSubSection.DUTY_TOOLS) }
-    var botPhoneInput by remember { mutableStateOf(WhatsAppBotHelper.getBotPhoneNumber(context)) }
-    var botSavedBanner by remember { mutableStateOf<String?>(null) }
+    val data = uiState.staffData
 
     var noticeTitle by remember { mutableStateOf("") }
-    var noticeCategory by remember { mutableStateOf(NOTICE_CATEGORIES.first()) }
+    var noticeCat by remember { mutableStateOf("General") }
     var noticeBody by remember { mutableStateOf("") }
+
     var holidayDate by remember { mutableStateOf(AttendanceApiClient.todayIstDateString()) }
     var holidayReason by remember { mutableStateOf("") }
 
-    val staffData = uiState.staffData
+    val dutyToday = remember(data?.dutyOverrides, data?.holidays) {
+        DutyRotationEngine.assignmentForDate(overrides = data?.dutyOverrides.orEmpty(), holidays = data?.holidays.orEmpty())
+    }
+    var dutyNote by remember { mutableStateOf("") }
+    var ovRoll1 by remember { mutableStateOf(dutyToday.firstRoll.toString()) }
+    var ovRoll2 by remember { mutableStateOf(dutyToday.secondRoll.toString()) }
+
+    var toolItem by remember { mutableStateOf("") }
+    var toolCondition by remember { mutableStateOf("DAMAGED") }
+    var toolNotes by remember { mutableStateOf("") }
+
+    val timetablePeriods = remember(uiState.activeTimetable) {
+        mutableStateListOf<TimetablePeriod>().apply { addAll(uiState.activeTimetable.ifEmpty { TimetableStore.defaultWeeklyTimetable() }) }
+    }
+    var allowTraineeTtEdit by remember(data?.traineeTimetableEditEnabled) { mutableStateOf(data?.traineeTimetableEditEnabled ?: false) }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().testTag("staff_campus_hub_tab"),
+        modifier = modifier.fillMaxSize().testTag("staff_campus_tab"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(CampusSubSection.entries) { section ->
-                    val selected = activeSection == section
-                    FilterChip(
-                        selected = selected,
-                        onClick = { activeSection = section },
-                        label = { Text(section.label) },
-                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = colors.skyAccent, selectedLabelColor = MaterialTheme.colorScheme.onPrimary)
-                    )
+            Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.Sensors, contentDescription = null, tint = colors.emeraldAccent)
+                        Text("ESP8266 Manual Card Tap Simulator", style = MaterialTheme.typography.titleSmall)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = uiState.espRollInput,
+                            onValueChange = onEspRollChanged,
+                            label = { Text("Roll (1-23)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(onClick = onTriggerManualTap, enabled = !uiState.isTriggeringEspTap) {
+                            Text(if (uiState.isTriggeringEspTap) "Tapping..." else "Tap Card")
+                        }
+                    }
+                    if (uiState.espTapMessage != null) InlineAlertCard(uiState.espTapMessage, isError = false)
+                    if (uiState.espTapError != null) InlineAlertCard(uiState.espTapError, isError = true)
                 }
             }
         }
 
-        when (activeSection) {
-            CampusSubSection.DUTY_TOOLS -> {
-                item {
-                    Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.emeraldAccent.copy(alpha = 0.45f)), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("WhatsApp Bot & Loud Alert Tone", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                                IconButton(onClick = { AttendanceNotificationHelper.playLoudAlertTone(context) }) {
-                                    Icon(Icons.Rounded.VolumeUp, contentDescription = "Test alert tone", tint = colors.amberAccent)
-                                }
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                OutlinedTextField(value = botPhoneInput, onValueChange = { botPhoneInput = it.filter { ch -> ch.isDigit() || ch == '+' }.take(15) }, label = { Text("WhatsApp Bot Number") }, singleLine = true, modifier = Modifier.weight(1f))
-                                Button(onClick = { botPhoneInput = WhatsAppBotHelper.setBotPhoneNumber(context, botPhoneInput); botSavedBanner = "Saved wa.me/$botPhoneInput" }) { Text("Save") }
-                            }
-                            if (botSavedBanner != null) InlineAlertCard(botSavedBanner.orEmpty(), false)
-                        }
+        item {
+            Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.Campaign, contentDescription = null, tint = colors.skyAccent)
+                        Text("Publish Campus Notice", style = MaterialTheme.typography.titleSmall)
                     }
+                    OutlinedTextField(value = noticeTitle, onValueChange = { noticeTitle = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = noticeCat, onValueChange = { noticeCat = it }, label = { Text("Category") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = noticeBody, onValueChange = { noticeBody = it }, label = { Text("Notice Details") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                    if (uiState.noticePostMessage != null) InlineAlertCard(uiState.noticePostMessage, isError = false)
+                    if (uiState.noticePostError != null) InlineAlertCard(uiState.noticePostError, isError = true)
+                    Button(
+                        enabled = !uiState.isPostingNotice && noticeTitle.isNotBlank() && noticeBody.isNotBlank(),
+                        onClick = { onPostNotice(noticeTitle, noticeCat, noticeBody) { noticeTitle = ""; noticeBody = "" } },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Post Notice") }
                 }
-                item {
-                    val todayDuty = DutyRotationEngine.assignmentForDate(overrides = staffData?.dutyOverrides.orEmpty(), holidays = staffData?.holidays.orEmpty())
-                    var dutyNote by remember { mutableStateOf("") }
-                    var r1 by remember { mutableStateOf(todayDuty.firstRoll.toString()) }
-                    var r2 by remember { mutableStateOf(todayDuty.secondRoll.toString()) }
-                    Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Rounded.CleaningServices, contentDescription = null, tint = colors.amberAccent)
-                                Text("Today's Duty: ${todayDuty.pairLabel}", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                            }
-                            OutlinedTextField(value = dutyNote, onValueChange = { dutyNote = it }, label = { Text("Sign-off Note") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            Button(onClick = { onSignOffDuty(todayDuty.dateKey, todayDuty.pairLabel, dutyNote) { dutyNote = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Sign Off Today's Cleaning Duty") }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(value = r1, onValueChange = { r1 = it.filter(Char::isDigit).take(2) }, label = { Text("Roll 1") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
-                                OutlinedTextField(value = r2, onValueChange = { r2 = it.filter(Char::isDigit).take(2) }, label = { Text("Roll 2") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
-                            }
-                            if (uiState.dutyOverrideMessage != null) InlineAlertCard(uiState.dutyOverrideMessage, false)
-                            OutlinedButton(onClick = {
+            }
+        }
+
+        item {
+            Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.EventBusy, contentDescription = null, tint = colors.violetAccent)
+                        Text("Declare Official Holiday", style = MaterialTheme.typography.titleSmall)
+                    }
+                    OutlinedTextField(value = holidayDate, onValueChange = { holidayDate = it }, label = { Text("Date (dd-MM-yyyy)") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = holidayReason, onValueChange = { holidayReason = it }, label = { Text("Reason") }, modifier = Modifier.fillMaxWidth())
+                    if (uiState.holidayPostMessage != null) InlineAlertCard(uiState.holidayPostMessage, isError = false)
+                    if (uiState.holidayPostError != null) InlineAlertCard(uiState.holidayPostError, isError = true)
+                    Button(
+                        enabled = !uiState.isPostingHoliday && holidayReason.isNotBlank(),
+                        onClick = { onPostHoliday(holidayDate, holidayReason) { holidayReason = "" } },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Publish Holiday") }
+                }
+            }
+        }
+
+        item {
+            Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Daily Duty Rotation (${dutyToday.dateKey}): ${dutyToday.pairLabel}", style = MaterialTheme.typography.titleSmall)
+                    OutlinedTextField(value = dutyNote, onValueChange = { dutyNote = it }, label = { Text("Duty Sign-Off Note") }, modifier = Modifier.fillMaxWidth())
+                    Button(
+                        onClick = { onSignOffDuty(dutyToday.dateKey, dutyToday.pairLabel, dutyNote) { dutyNote = "" } },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Sign Off Today's Duty") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = ovRoll1, onValueChange = { ovRoll1 = it.filter(Char::isDigit).take(2) }, label = { Text("Roll 1") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = ovRoll2, onValueChange = { ovRoll2 = it.filter(Char::isDigit).take(2) }, label = { Text("Roll 2") }, modifier = Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
                                 onDismissDutyOverrideFeedback()
-                                val a = (r1.toIntOrNull() ?: todayDuty.firstRoll).coerceIn(1, 23)
-                                val b = (r2.toIntOrNull() ?: todayDuty.secondRoll).coerceIn(1, 23)
-                                onSaveDutyOverride(todayDuty.dateKey, a, b, "Instructor Override", false, false)
-                            }, modifier = Modifier.fillMaxWidth()) { Text("Override Today's Duty Pair") }
-                        }
+                                onSaveDutyOverride(dutyToday.dateKey, ovRoll1.toIntOrNull() ?: 1, ovRoll2.toIntOrNull() ?: 2, dutyNote, false, false)
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Override Pair") }
+                        OutlinedButton(
+                            onClick = {
+                                onDismissDutyOverrideFeedback()
+                                onSaveDutyOverride(dutyToday.dateKey, 1, 2, "", false, true)
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Reset Auto") }
                     }
-                }
-                item {
-                    var itemName by remember { mutableStateOf("") }
-                    var condition by remember { mutableStateOf("DAMAGED") }
-                    var notes by remember { mutableStateOf("") }
-                    Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Rounded.Build, contentDescription = null, tint = colors.skyAccent)
-                                Text("Tool Crib Issue Log", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                            }
-                            OutlinedTextField(value = itemName, onValueChange = { itemName = it }, label = { Text("Tool / Equipment Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("DAMAGED", "MISSING", "REPAIRED").forEach { st ->
-                                    FilterChip(selected = condition == st, onClick = { condition = st }, label = { Text(st, style = MaterialTheme.typography.labelSmall) })
-                                }
-                            }
-                            OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Details") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            Button(enabled = itemName.isNotBlank(), onClick = { onLogToolCrib(itemName, condition, notes) { itemName = ""; notes = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Log Tool Issue") }
-                        }
-                    }
+                    if (uiState.dutyOverrideMessage != null) InlineAlertCard(uiState.dutyOverrideMessage, isError = false)
+                    if (uiState.dutyOverrideError != null) InlineAlertCard(uiState.dutyOverrideError, isError = true)
                 }
             }
+        }
 
-            CampusSubSection.TIMETABLE -> {
-                item {
-                    val base = staffData?.timetable?.ifEmpty { uiState.officialTimetableCache } ?: uiState.officialTimetableCache
-                    val editable = remember(base) { mutableStateListOf<TimetablePeriod>().apply { addAll(base) } }
-                    var allowEdit by remember(staffData?.traineeTimetableEditEnabled) { mutableStateOf(staffData?.traineeTimetableEditEnabled ?: false) }
-                    Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Icon(Icons.Rounded.CalendarMonth, contentDescription = null, tint = colors.skyAccent)
-                                    Text("Weekly Timetable Editor", style = MaterialTheme.typography.titleMedium)
-                                }
-                                Switch(checked = allowEdit, onCheckedChange = { allowEdit = it })
-                            }
-                            editable.forEachIndexed { idx, p ->
-                                OutlinedTextField(value = p.subject, onValueChange = { editable[idx] = p.copy(subject = it) }, label = { Text("${p.day} • ${p.slot}") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            }
-                            if (uiState.timetableFeedbackMessage != null) InlineAlertCard(uiState.timetableFeedbackMessage, false)
-                            Button(onClick = { onDismissTimetableFeedback(); onPublishTimetable(editable.toList(), allowEdit) }, enabled = !uiState.isSavingTimetable, modifier = Modifier.fillMaxWidth()) {
-                                Text("Publish Timetable Live")
-                            }
+        item {
+            Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Rounded.Groups, contentDescription = null, tint = colors.skyAccent)
+                            Text("Project Groups & Timetable", style = MaterialTheme.typography.titleSmall)
                         }
+                        IconButton(onClick = onRefreshProjectGroups) { Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Groups") }
                     }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Allow Trainees to Form Project Groups", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        Switch(checked = data?.projectGroupsEnabled ?: false, onCheckedChange = onToggleProjectGroupsAccess)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Allow Trainees to Edit Shared Timetable", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        Switch(checked = allowTraineeTtEdit, onCheckedChange = { allowTraineeTtEdit = it })
+                    }
+                    Button(onClick = { onDismissTimetableFeedback(); onPublishTimetable(timetablePeriods.toList(), allowTraineeTtEdit) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Publish Official Timetable Settings")
+                    }
+                    if (uiState.timetableFeedbackMessage != null) InlineAlertCard(uiState.timetableFeedbackMessage, isError = false)
+                    if (uiState.timetableError != null) InlineAlertCard(uiState.timetableError, isError = true)
                 }
             }
+        }
 
-            CampusSubSection.NOTICES -> {
-                item {
-                    Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Rounded.Campaign, contentDescription = null, tint = colors.skyAccent)
-                                Text("Publish Trade Notice", style = MaterialTheme.typography.titleMedium)
-                            }
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(NOTICE_CATEGORIES) { cat ->
-                                    FilterChip(selected = noticeCategory == cat, onClick = { noticeCategory = cat }, label = { Text(cat) })
-                                }
-                            }
-                            OutlinedTextField(value = noticeTitle, onValueChange = { noticeTitle = it }, label = { Text("Notice Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            OutlinedTextField(value = noticeBody, onValueChange = { noticeBody = it }, label = { Text("Body (English / Manglish / മലയാളം)") }, minLines = 3, modifier = Modifier.fillMaxWidth())
-                            if (uiState.noticePostMessage != null) InlineAlertCard(uiState.noticePostMessage, false)
-                            if (uiState.noticePostError != null) InlineAlertCard(uiState.noticePostError, true)
-                            Button(onClick = { onPostNotice(noticeTitle, noticeCategory, noticeBody) { noticeTitle = ""; noticeBody = "" } }, enabled = !uiState.isPostingNotice && noticeTitle.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Publish Notice")
-                            }
-                        }
-                    }
-                }
-                items(staffData?.notices.orEmpty(), key = { "hub_ntc_${it.id}" }) { notice -> NoticeCardItem(notice, false) }
-            }
-
-            CampusSubSection.HOLIDAYS -> {
-                item {
-                    Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.amberAccent.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Rounded.Celebration, contentDescription = null, tint = colors.amberAccent)
-                                Text("Declare Holiday", style = MaterialTheme.typography.titleMedium)
-                            }
-                            OutlinedTextField(value = holidayDate, onValueChange = { holidayDate = it }, label = { Text("Holiday Date (DD-MM-YYYY)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            OutlinedTextField(value = holidayReason, onValueChange = { holidayReason = it }, label = { Text("Holiday Reason (English / മലയാളം)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
-                            if (uiState.holidayPostMessage != null) InlineAlertCard(uiState.holidayPostMessage, false)
-                            if (uiState.holidayPostError != null) InlineAlertCard(uiState.holidayPostError, true)
-                            Button(onClick = { onPostHoliday(holidayDate, holidayReason) { holidayReason = "" } }, enabled = !uiState.isPostingHoliday && holidayReason.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = colors.amberAccent), modifier = Modifier.fillMaxWidth()) {
-                                Text("Publish Holiday")
-                            }
-                        }
-                    }
-                }
-            }
-
-            CampusSubSection.PROJECTS -> {
-                item {
-                    Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("Enable Trainee Project Group Entry", style = MaterialTheme.typography.titleSmall)
-                                Switch(checked = staffData?.projectGroupsEnabled ?: false, onCheckedChange = onToggleProjectGroupsAccess)
-                            }
-                            OutlinedButton(onClick = onRefreshProjectGroups, modifier = Modifier.fillMaxWidth()) { Text("Refresh Project Groups") }
-                        }
-                    }
-                }
-                items(staffData?.projectGroups.orEmpty(), key = { "st_pg_${it.groupId}" }) { pg ->
-                    Surface(shape = RoundedCornerShape(14.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(pg.projectTitle, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                            Text("Leader: ${pg.leaderName} (#${pg.leaderRoll}) • Members: ${pg.memberRolls.joinToString(", ")}", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-                        }
-                    }
-                }
-            }
-
-            CampusSubSection.ESP -> {
-                item {
-                    Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.emeraldAccent.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Rounded.Sensors, contentDescription = null, tint = colors.emeraldAccent)
-                                Text("ESP8266 RF Card Scan Terminal", style = MaterialTheme.typography.titleMedium)
-                            }
-                            OutlinedTextField(value = uiState.espRollInput, onValueChange = onEspRollChanged, label = { Text("Enter Trainee Roll #1-23") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth().testTag("esp_roll_input"))
-                            Button(onClick = onTriggerManualTap, enabled = !uiState.isTappingEsp, colors = ButtonDefaults.buttonColors(containerColor = colors.emeraldAccent), modifier = Modifier.fillMaxWidth().testTag("esp_trigger_tap_button")) {
-                                if (uiState.isTappingEsp) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Trigger RF Tap on Sheet")
-                            }
-                            if (uiState.espTapError != null) InlineAlertCard(uiState.espTapError, true)
-                            if (uiState.lastEspTap != null) {
-                                InlineAlertCard("Tapped Roll #${uiState.lastEspTap.roll} (${uiState.lastEspTap.name}): ${uiState.lastEspTap.mode} at ${uiState.lastEspTap.time}", false)
-                            }
-                        }
-                    }
-                }
-                items(uiState.espTapHistory, key = { "esp_${it.roll}_${it.time}_${it.hashCode()}" }) { tap ->
-                    Surface(shape = RoundedCornerShape(12.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
-                        Text("Roll #${tap.roll} • ${tap.name} -> ${tap.mode} (${tap.time})", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
-                    }
+        item {
+            Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Tool Crib Equipment Log", style = MaterialTheme.typography.titleSmall)
+                    OutlinedTextField(value = toolItem, onValueChange = { toolItem = it }, label = { Text("Instrument / Tool Name") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = toolCondition, onValueChange = { toolCondition = it }, label = { Text("Condition (DAMAGED / MISSING / CALIBRATION)") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = toolNotes, onValueChange = { toolNotes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
+                    Button(
+                        enabled = toolItem.isNotBlank(),
+                        onClick = { onLogToolCrib(toolItem, toolCondition, toolNotes) { toolItem = ""; toolNotes = "" } },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Log Tool Crib Entry") }
                 }
             }
         }

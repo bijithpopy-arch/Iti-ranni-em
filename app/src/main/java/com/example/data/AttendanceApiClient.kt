@@ -21,6 +21,7 @@ class AttendanceApiClient {
         const val BASE_URL =
             "https://script.google.com/macros/s/AKfycbyHV65ckL_FdhXCd27TTCxJbgMY5tc0d8Pvifxe60o7aLMe0TMvjzuknotjEvwoDOzRyw/exec"
         const val ESP_KEY = "EMECH_KEY_2026"
+        const val SHEET_NAME = "EMech_2025_27_Attendance"
 
         fun todayIstDateString(): String {
             val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.US)
@@ -612,6 +613,102 @@ class AttendanceApiClient {
         }
     }
 
+    suspend fun fetchLiveConfig(): ApiResult<Pair<Map<String, String>, Map<String, String>>> {
+        return executeGet(mapOf("action" to "get_live_config")) { json ->
+            val appMap = jsonObjectToStringMap(json.optJSONObject("appConfig"))
+            val uiMap = jsonObjectToStringMap(json.optJSONObject("uiConfig"))
+            appMap to uiMap
+        }
+    }
+
+    suspend fun saveRemoteAppConfig(pin: String, updates: Map<String, String>): ApiResult<SimpleActionResult> {
+        val params = mutableMapOf("action" to "save_app_config", "pin" to pin.trim())
+        updates.forEach { (k, v) -> params[k] = v }
+        return executeGet(params) { json ->
+            SimpleActionResult(json.optString("msg", "App config pushed live.").ifBlank { "App config pushed live." })
+        }
+    }
+
+    suspend fun saveRemoteUiConfig(pin: String, updates: Map<String, String>, scope: String): ApiResult<SimpleActionResult> {
+        val params = mutableMapOf("action" to "save_ui_config", "pin" to pin.trim(), "scope" to scope.trim())
+        updates.forEach { (k, v) -> params[k] = v }
+        return executeGet(params) { json ->
+            SimpleActionResult(json.optString("msg", "Live UI config updated.").ifBlank { "Live UI config updated." })
+        }
+    }
+
+    suspend fun submitBugReport(
+        screenName: String,
+        reportedBy: String,
+        role: String,
+        appVersion: String,
+        description: String
+    ): ApiResult<SimpleActionResult> {
+        return executeGet(
+            mapOf(
+                "action" to "submit_bug",
+                "screenName" to screenName.trim(),
+                "reportedBy" to reportedBy.trim(),
+                "role" to role.trim(),
+                "appVersion" to appVersion.trim(),
+                "description" to description.trim()
+            )
+        ) { json ->
+            SimpleActionResult(json.optString("msg", "Bug report submitted.").ifBlank { "Bug report submitted." })
+        }
+    }
+
+    suspend fun fetchBugReports(pin: String): ApiResult<List<Map<String, String>>> {
+        return executeGet(mapOf("action" to "get_bugs", "pin" to pin.trim())) { json ->
+            val arr = json.optJSONArray("bugs") ?: JSONArray()
+            buildList {
+                for (i in 0 until arr.length()) {
+                    arr.optJSONObject(i)?.let { add(jsonObjectToStringMap(it)) }
+                }
+            }
+        }
+    }
+
+    suspend fun resolveBugReport(pin: String, bugId: String, reply: String): ApiResult<SimpleActionResult> {
+        return executeGet(
+            mapOf("action" to "resolve_bug", "pin" to pin.trim(), "bugId" to bugId.trim(), "reply" to reply.trim())
+        ) { json ->
+            SimpleActionResult(json.optString("msg", "Bug marked resolved.").ifBlank { "Bug marked resolved." })
+        }
+    }
+
+    suspend fun editSheetRow(
+        pin: String,
+        tabName: String,
+        rowIndex: Int,
+        colName: String,
+        newValue: String
+    ): ApiResult<SimpleActionResult> {
+        return executeGet(
+            mapOf(
+                "action" to "edit_sheet_row",
+                "pin" to pin.trim(),
+                "tabName" to tabName.trim(),
+                "rowIndex" to rowIndex.toString(),
+                "colName" to colName.trim(),
+                "newValue" to newValue
+            )
+        ) { json ->
+            SimpleActionResult(json.optString("msg", "Sheet cell updated in $SHEET_NAME.").ifBlank { "Sheet cell updated." })
+        }
+    }
+
+    private fun jsonObjectToStringMap(obj: JSONObject?): Map<String, String> {
+        if (obj == null) return emptyMap()
+        val out = linkedMapOf<String, String>()
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            out[k] = obj.opt(k)?.toString().orEmpty()
+        }
+        return out
+    }
+
     private fun parseAttendanceSummary(attObj: JSONObject?): AttendanceSummary {
         val obj = attObj ?: JSONObject()
         val present = obj.optSafeInt("present").coerceAtLeast(0)
@@ -893,8 +990,9 @@ class AttendanceApiClient {
         try {
             val urlBuilder = BASE_URL.toHttpUrl().newBuilder()
             urlBuilder.addQueryParameter("key", ESP_KEY)
+            urlBuilder.addQueryParameter("sheetName", SHEET_NAME)
             params.forEach { (key, value) ->
-                if (!key.equals("key", ignoreCase = true)) {
+                if (!key.equals("key", ignoreCase = true) && !key.equals("sheetName", ignoreCase = true)) {
                     urlBuilder.addQueryParameter(key, value)
                 }
             }

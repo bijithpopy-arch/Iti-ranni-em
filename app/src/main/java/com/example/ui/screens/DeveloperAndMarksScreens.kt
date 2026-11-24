@@ -299,6 +299,11 @@ fun DeveloperMasterPanel(
                 var cellVal by remember { mutableStateOf("") }
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Connected Google Sheet: ${AttendanceApiClient.SHEET_NAME}",
+                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = JetBrainsMonoFamily),
+                        color = LocalItiColors.current.emeraldAccent
+                    )
                     Text("Direct Live Sheet Cell Override", fontWeight = FontWeight.Bold)
                     OutlinedTextField(value = targetTab, onValueChange = { targetTab = it }, label = { Text("Sheet Tab (e.g. Leave_Requests, Shop_Floor, Notices)") }, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = rowNum, onValueChange = { rowNum = it }, label = { Text("Row Number (2+)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())

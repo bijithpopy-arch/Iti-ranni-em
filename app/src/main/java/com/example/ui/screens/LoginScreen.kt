@@ -164,7 +164,7 @@ fun LoginScreen(
                 .height(260.dp)
         ) {
             Image(
-                painter = painterResource(id = R.drawable.img_electronics_banner_1795543229995),
+                painter = painterResource(id = R.drawable.img_electronics_banner_1795563711290),
                 contentDescription = stringResource(R.string.cd_circuit_banner),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
