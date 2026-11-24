@@ -1079,3 +1079,316 @@ fun CampusManagementTab(
         }
     }
 }
+private fun readQueryField(obj: Any, vararg getterNames: String): String {
+    for (name in getterNames) {
+        val value = runCatching { obj.javaClass.getMethod(name).invoke(obj)?.toString() }.getOrNull()
+        if (!value.isNullOrBlank()) return value
+    }
+    return ""
+}
+
+@Composable
+private fun InstructorMarksAndQueriesPanel(
+    uiState: AppUiState,
+    onSaveMonthlyMark: (
+        markId: String,
+        roll: String,
+        monthLabel: String,
+        examDate: String,
+        theoryMarks: Int,
+        theoryMax: Int,
+        labMarks: Int,
+        labMax: Int,
+        remarks: String,
+        publish: Boolean,
+        notifyParent: Boolean,
+        onSuccessReset: () -> Unit
+    ) -> Unit,
+    onDismissMonthlyMarkFeedback: () -> Unit,
+    onReplyWorkMarkQuery: (queryId: String, status: String, reply: String, onSuccessReset: () -> Unit) -> Unit,
+    onDismissWorkQueryReplyFeedback: () -> Unit
+) {
+    val colors = LocalItiColors.current
+    var rollInput by remember { mutableStateOf("1") }
+    var monthLabel by remember { mutableStateOf("Nov 2026") }
+    var examDate by remember { mutableStateOf(AttendanceApiClient.todayIstDateString()) }
+    var theoryText by remember { mutableStateOf("") }
+    var labText by remember { mutableStateOf("") }
+    var remarks by remember { mutableStateOf("") }
+    var publishToPortal by remember { mutableStateOf(true) }
+    var notifyParent by remember { mutableStateOf(true) }
+
+    val traineeName = remember(rollInput, uiState.staffData?.allAttendance) {
+        val clean = rollInput.trim()
+        uiState.staffData?.allAttendance?.firstOrNull { it.roll.trim() == clean }?.name.orEmpty()
+    }
+    val queries = uiState.staffData?.workMarkQueries.orEmpty()
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = colors.cardSurface,
+            border = BorderStroke(1.dp, colors.borderSubtle),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Monthly Theory & Lab Exam Marks",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = if (traineeName.isNotBlank()) "Selected: Roll #$rollInput • $traineeName" else "Enter trainee Roll Number (1–23) and marks",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (traineeName.isNotBlank()) colors.emeraldAccent else colors.textMuted
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = rollInput,
+                        onValueChange = { rollInput = it.filter { ch -> ch.isDigit() }.take(2) },
+                        label = { Text("Roll (1–23)") },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.skyAccent,
+                            unfocusedBorderColor = colors.borderSubtle,
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier.weight(0.9f)
+                    )
+                    OutlinedTextField(
+                        value = monthLabel,
+                        onValueChange = { monthLabel = it },
+                        label = { Text("Exam Month") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.skyAccent,
+                            unfocusedBorderColor = colors.borderSubtle,
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier.weight(1.3f)
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = theoryText,
+                        onValueChange = { theoryText = it.filter { ch -> ch.isDigit() }.take(2) },
+                        label = { Text("Theory / 50") },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.skyAccent,
+                            unfocusedBorderColor = colors.borderSubtle,
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = labText,
+                        onValueChange = { labText = it.filter { ch -> ch.isDigit() }.take(3) },
+                        label = { Text("Lab / 100") },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.skyAccent,
+                            unfocusedBorderColor = colors.borderSubtle,
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                OutlinedTextField(
+                    value = remarks,
+                    onValueChange = { remarks = it },
+                    label = { Text("Instructor Remarks (Optional)") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = colors.skyAccent,
+                        unfocusedBorderColor = colors.borderSubtle,
+                        focusedContainerColor = MaterialTheme.colorScheme.background,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.background
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Publish to Trainee/Parent", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                    Switch(checked = publishToPortal, onCheckedChange = { publishToPortal = it })
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Send Parent Notification", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                    Switch(checked = notifyParent, onCheckedChange = { notifyParent = it })
+                }
+
+                AnimatedVisibility(visible = uiState.monthlyMarkMessage != null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        InlineAlertCard(message = uiState.monthlyMarkMessage.orEmpty(), isError = false)
+                        androidx.compose.material3.TextButton(onClick = onDismissMonthlyMarkFeedback) {
+                            Text("Dismiss")
+                        }
+                    }
+                }
+                AnimatedVisibility(visible = uiState.monthlyMarkError != null) {
+                    InlineAlertCard(message = uiState.monthlyMarkError.orEmpty(), isError = true)
+                }
+
+                Button(
+                    onClick = {
+                        onSaveMonthlyMark(
+                            "",
+                            rollInput,
+                            monthLabel,
+                            examDate,
+                            theoryText.toIntOrNull() ?: 0,
+                            50,
+                            labText.toIntOrNull() ?: 0,
+                            100,
+                            remarks,
+                            publishToPortal,
+                            notifyParent
+                        ) {
+                            theoryText = ""
+                            labText = ""
+                            remarks = ""
+                        }
+                    },
+                    enabled = !uiState.isSavingMonthlyMark,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.emeraldAccent,
+                        contentColor = MaterialTheme.colorScheme.onSecondary
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) {
+                    if (uiState.isSavingMonthlyMark) {
+                        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Saving Mark...")
+                    } else {
+                        Text("Save & Publish Exam Mark", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                    }
+                }
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = colors.cardSurface,
+            border = BorderStroke(1.dp, colors.borderSubtle),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Trainee Work / Lab Mark Queries (${queries.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                AnimatedVisibility(visible = uiState.workQueryReplyMessage != null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        InlineAlertCard(message = uiState.workQueryReplyMessage.orEmpty(), isError = false)
+                        androidx.compose.material3.TextButton(onClick = onDismissWorkQueryReplyFeedback) {
+                            Text("Dismiss")
+                        }
+                    }
+                }
+                AnimatedVisibility(visible = uiState.workQueryReplyError != null) {
+                    InlineAlertCard(message = uiState.workQueryReplyError.orEmpty(), isError = true)
+                }
+
+                if (queries.isEmpty()) {
+                    Text(
+                        text = "No trainee work/lab mark review queries submitted yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textMuted
+                    )
+                } else {
+                    queries.forEach { q ->
+                        val qId = readQueryField(q, "getId", "getQueryId")
+                        val qRoll = readQueryField(q, "getRoll")
+                        val qName = readQueryField(q, "getStudentName", "getName")
+                        val qRef = readQueryField(q, "getWorkReference", "getMonthLabel")
+                        val qNote = readQueryField(q, "getTraineeNote", "getNote")
+                        val qStatus = readQueryField(q, "getStatus").ifBlank { "OPEN" }
+                        val existingReply = readQueryField(q, "getInstructorReply", "getReply")
+                        var replyText by remember(qId) { mutableStateOf(existingReply) }
+
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.background,
+                            border = BorderStroke(1.dp, colors.borderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Roll #$qRoll ${if (qName.isNotBlank()) "• $qName" else ""} [$qStatus]",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = colors.skyAccent
+                                )
+                                if (qRef.isNotBlank()) {
+                                    Text(text = qRef, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                                if (qNote.isNotBlank()) {
+                                    Text(text = qNote, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                                }
+                                OutlinedTextField(
+                                    value = replyText,
+                                    onValueChange = { replyText = it },
+                                    label = { Text("Instructor Reply") },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Button(
+                                    onClick = {
+                                        onReplyWorkMarkQuery(qId, "RESOLVED", replyText) {}
+                                    },
+                                    enabled = uiState.replyingWorkQueryId != qId && qId.isNotBlank(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(if (uiState.replyingWorkQueryId == qId) "Sending..." else "Resolve & Send Reply")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
