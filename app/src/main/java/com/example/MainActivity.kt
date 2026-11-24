@@ -536,9 +536,9 @@ private fun RenderSessionScreens(
                 }
                 Box(modifier = Modifier.weight(1f)) {
                     DeveloperMasterPanel(
-                        appConfig = remoteAppConfig,
-                        uiConfig = remoteUiConfig,
-                        bugList = bugList,
+                        appConfig = uiState.remoteAppConfig,
+                        uiConfig = uiState.remoteUiConfig,
+                        bugList = uiState.bugReports,
                         onSaveAppConfig = viewModel::saveRemoteAppConfig,
                         onSaveUiConfig = viewModel::saveRemoteUiConfig,
                         onResolveBug = viewModel::resolveBugReport,
