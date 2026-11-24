@@ -1,4 +1,5 @@
-package com.example.ui
+package com.example.ui.screens
+
 
 data class RemoteAppConfig(
     val developerPin: String = "7777",
