@@ -47,6 +47,7 @@ import com.example.data.OfflineSyncQueue
 import com.example.notifications.AttendanceNotificationHelper
 import com.example.ui.screens.DeveloperMasterPanel
 import com.example.ui.screens.LoginScreen
+import com.example.ui.screens.ParentDashboardScreen
 import com.example.ui.screens.PrincipalDashboardScreen
 import com.example.ui.screens.RemoteAppConfig
 import com.example.ui.screens.RemoteUiConfig
@@ -408,6 +409,12 @@ private fun RenderSessionScreens(
                 onMarkNoticesSeen = { viewModel.markNoticesSeen(context) },
                 onRefresh = viewModel::refreshTraineeDashboard,
                 onLogout = viewModel::logout,
+                onCheckUpdate = {
+                    val cfg = viewModel.uiState.value.remoteAppConfig
+                    if (cfg.updaterEnabled) {
+                        viewModel.checkForAppUpdate(silentIfUpToDate = false)
+                    }
+                },
                 onSubmitLeave = viewModel::submitLeaveRequest,
                 onDismissFeedback = viewModel::dismissLeaveFeedback,
                 onSaveProjectGroup = viewModel::saveProjectGroup,
@@ -495,22 +502,21 @@ private fun RenderSessionScreens(
                 onExportPdf = { onPdfReady -> viewModel.exportAttendancePdf(onPdfReady) }
             )
 
-            SessionScreen.ParentDashboard -> Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Parent Dashboard",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                TextButton(onClick = viewModel::logout) {
-                    Text("Logout")
+            SessionScreen.ParentDashboard -> ParentDashboardScreen(
+                uiState = uiState,
+                onRefresh = viewModel::refreshParentDashboard,
+                onLogout = viewModel::logout,
+                onEvaluateNotification = { viewModel.evaluateParentNotification(context) },
+                onSubmitBunkAlert = viewModel::submitParentBunkAlert,
+                onSubmitLeaveReason = viewModel::submitParentLeaveReason,
+                onDismissFeedback = viewModel::dismissParentAlertFeedback,
+                onCheckUpdate = {
+                    val cfg = viewModel.uiState.value.remoteAppConfig
+                    if (cfg.updaterEnabled) {
+                        viewModel.checkForAppUpdate(silentIfUpToDate = false)
+                    }
                 }
-            }
+            )
 
             SessionScreen.DeveloperDashboard -> Column(modifier = Modifier.fillMaxSize()) {
                 Row(
