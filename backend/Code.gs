@@ -147,7 +147,7 @@ function doGet(e) {
       case 'save_project_group':
         return handleSaveProjectGroup(ss, params);
       case 'print_attendance':
-        return requireStaffPin(params, () => handlePrintAttendancePdf(ss));
+        return requireStaffPin(params, (role) => handlePrintAttendancePdf(ss, role));
 
       default:
         return jsonOut({
@@ -928,7 +928,9 @@ function handleTraineeData(ss, params) {
     myAcademicSubmission: getAcademicSubmissionsList(ss, roll)[0] || null,
     dutyOverrides: getDutyOverridesMap(ss),
     timetable: getTimetableList(ss),
-    traineeTimetableEditEnabled: isTraineeTimetableEditEnabled()
+    traineeTimetableEditEnabled: isTraineeTimetableEditEnabled(),
+    publishedReportUrl: PropertiesService.getScriptProperties().getProperty('LAST_PUBLISHED_REPORT_URL') || '',
+    publishedReportAt: PropertiesService.getScriptProperties().getProperty('LAST_PUBLISHED_REPORT_AT') || ''
   });
 }
 
@@ -978,7 +980,9 @@ function handleParentData(ss, params) {
     pinnedBroadcast: pinnedBroadcast,
     wardShopFloor: wardShopFloor,
     parentAlerts: getParentAlertsList(ss, roll),
-    monthlyMarks: getMonthlyMarksList(ss, roll, true)
+    monthlyMarks: getMonthlyMarksList(ss, roll, true),
+    publishedReportUrl: PropertiesService.getScriptProperties().getProperty('LAST_PUBLISHED_REPORT_URL') || '',
+    publishedReportAt: PropertiesService.getScriptProperties().getProperty('LAST_PUBLISHED_REPORT_AT') || ''
   });
 }
 
@@ -1040,7 +1044,9 @@ function handleStaffData(ss, params) {
     academicSubmissions: getAcademicSubmissionsList(ss, ''),
     dutyOverrides: getDutyOverridesMap(ss),
     timetable: getTimetableList(ss),
-    traineeTimetableEditEnabled: isTraineeTimetableEditEnabled()
+    traineeTimetableEditEnabled: isTraineeTimetableEditEnabled(),
+    publishedReportUrl: PropertiesService.getScriptProperties().getProperty('LAST_PUBLISHED_REPORT_URL') || '',
+    publishedReportAt: PropertiesService.getScriptProperties().getProperty('LAST_PUBLISHED_REPORT_AT') || ''
   });
 }
 
@@ -1802,16 +1808,22 @@ function handleSaveProjectGroup(ss, params) {
   });
 }
 
-function handlePrintAttendancePdf(ss) {
+function handlePrintAttendancePdf(ss, role) {
   const sheet = ss.getSheetByName('Trainees') || ss.getSheets()[0];
   const ssId = ss.getId();
   const gid = sheet.getSheetId();
   const pdfUrl = 'https://docs.google.com/spreadsheets/d/' + ssId +
     '/export?format=pdf&gid=' + gid + '&portrait=true&fitw=true&gridlines=true';
+  const publishedAt = Utilities.formatDate(new Date(), TZ, 'dd-MM-yyyy hh:mm a');
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('LAST_PUBLISHED_REPORT_URL', pdfUrl);
+  props.setProperty('LAST_PUBLISHED_REPORT_AT', publishedAt);
+  props.setProperty('LAST_PUBLISHED_REPORT_BY', String(role || 'Staff'));
 
   return jsonOut({
     ok: true,
     pdfUrl: pdfUrl,
+    publishedReportAt: publishedAt,
     msg: 'Official Govt. ITI Ranni Attendance Register PDF generated.'
   });
 }

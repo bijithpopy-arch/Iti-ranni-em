@@ -23,6 +23,8 @@ import com.example.data.TraineeDashboardData
 import com.example.data.TraineeTab
 import com.example.data.UserRole
 import com.example.notifications.AttendanceNotificationHelper
+import com.example.notifications.BackgroundSyncConfig
+import com.example.notifications.BackgroundSyncScheduler
 import com.example.security.SessionPreferences
 import com.example.updater.AppUpdateInfo
 import com.example.updater.AppUpdater
@@ -226,6 +228,10 @@ class AppViewModel(
         if (sessionLoadedOnce) return _uiState.value.hasSavedCredentials && _uiState.value.biometricEnabled
         sessionLoadedOnce = true
         val saved = SessionPreferences.load(context)
+        if (saved.hasCredentials) {
+            BackgroundSyncConfig.save(context, saved.role, saved.roll, saved.pin)
+            BackgroundSyncScheduler.ensureScheduled(context)
+        }
         _uiState.update { state ->
             state.copy(
                 selectedRole = if (saved.rememberMe) saved.role else state.selectedRole,
@@ -267,6 +273,8 @@ class AppViewModel(
 
     fun clearSavedSession(context: Context) {
         SessionPreferences.clearAll(context)
+        BackgroundSyncConfig.clear(context)
+        BackgroundSyncScheduler.cancelAll(context)
         _uiState.update {
             it.copy(
                 rememberMe = false,
@@ -395,6 +403,15 @@ class AppViewModel(
         }
     }
 
+    fun handleNotificationTapRefresh() {
+        when (_uiState.value.screen) {
+            SessionScreen.TraineeDashboard -> refreshTraineeDashboard()
+            SessionScreen.ParentDashboard -> refreshParentDashboard()
+            SessionScreen.StaffDashboard, SessionScreen.PrincipalDashboard -> refreshStaffDashboard()
+            SessionScreen.Login -> Unit
+        }
+    }
+
     fun onRoleSelected(role: UserRole) {
         _uiState.update {
             it.copy(
@@ -471,6 +488,8 @@ class AppViewModel(
             roll = roll,
             pin = pin
         )
+        BackgroundSyncConfig.save(context, role, roll, pin)
+        BackgroundSyncScheduler.ensureScheduled(context)
     }
 
     private fun performTraineeLogin(roll: String, pin: String, context: Context?) {
@@ -479,6 +498,13 @@ class AppViewModel(
             when (val result = apiClient.fetchTraineeData(roll = roll, pin = pin)) {
                 is ApiResult.Success -> {
                     persistSessionAfterSuccess(context, UserRole.TRAINEE, roll, pin)
+                    if (context != null) {
+                        AttendanceNotificationHelper.evaluateTraineePublishedUpdates(
+                            context = context,
+                            data = result.data,
+                            seedBaselineOnly = true
+                        )
+                    }
                     val officialList = if (result.data.timetable.isNotEmpty()) {
                         if (context != null) {
                             TimetableStore.saveOfficialCache(context, result.data.timetable, result.data.traineeTimetableEditEnabled)
@@ -532,6 +558,13 @@ class AppViewModel(
             when (val result = apiClient.fetchParentData(roll = roll, pin = pin)) {
                 is ApiResult.Success -> {
                     persistSessionAfterSuccess(context, UserRole.PARENT, roll, pin)
+                    if (context != null) {
+                        AttendanceNotificationHelper.evaluateParentPublishedUpdates(
+                            context = context,
+                            data = result.data,
+                            seedBaselineOnly = true
+                        )
+                    }
                     _uiState.update { state ->
                         state.copy(
                             isLoggingIn = false,
@@ -564,6 +597,14 @@ class AppViewModel(
             when (val result = apiClient.fetchStaffData(pin = pin)) {
                 is ApiResult.Success -> {
                     persistSessionAfterSuccess(context, role, "", pin)
+                    if (context != null) {
+                        AttendanceNotificationHelper.evaluateStaffPublishedUpdates(
+                            context = context,
+                            data = result.data,
+                            activeRole = role,
+                            seedBaselineOnly = true
+                        )
+                    }
                     val officialList = if (result.data.timetable.isNotEmpty()) {
                         if (context != null) {
                             TimetableStore.saveOfficialCache(context, result.data.timetable, result.data.traineeTimetableEditEnabled)
@@ -677,14 +718,19 @@ class AppViewModel(
     }
 
     fun syncNoticeStateAndPopup(context: Context) {
-        val notices = _uiState.value.traineeData?.notices.orEmpty()
+        val traineeData = _uiState.value.traineeData
+        val notices = traineeData?.notices.orEmpty()
         val lastSeen = AttendanceNotificationHelper.getLastSeenNoticeId(context)
         val unread = AttendanceNotificationHelper.countUnreadNotices(context, notices)
         _uiState.update {
             it.copy(unreadNoticeCount = unread, lastSeenNoticeId = lastSeen)
         }
         if (notices.isNotEmpty() && _uiState.value.selectedTraineeTab != TraineeTab.NOTICES) {
-            AttendanceNotificationHelper.notifyNewNoticeIfNeeded(context, notices)
+            AttendanceNotificationHelper.notifyNewNoticeIfNeeded(
+                context = context,
+                notices = notices,
+                pinnedBroadcast = traineeData?.pinnedBroadcast
+            )
         }
     }
 

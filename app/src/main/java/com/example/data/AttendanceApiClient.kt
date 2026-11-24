@@ -132,7 +132,15 @@ class AttendanceApiClient {
                 myAcademicSubmission = mySubmission,
                 dutyOverrides = parseDutyOverrides(json.opt("dutyOverrides")),
                 timetable = TimetableStore.parseJsonArray(json.optJSONArray("timetable")),
-                traineeTimetableEditEnabled = json.optBoolean("traineeTimetableEditEnabled", false)
+                traineeTimetableEditEnabled = json.optBoolean("traineeTimetableEditEnabled", false),
+                publishedReportUrl = json.optString(
+                    "publishedReportUrl",
+                    json.optString("attendancePdfUrl", json.optString("reportUrl", ""))
+                ).trim(),
+                publishedReportAt = IstDateTimeFormatter.formatDateTime(
+                    json.optString("publishedReportAt", json.optString("reportPublishedAt", "")),
+                    ""
+                )
             )
         }
     }
@@ -175,7 +183,15 @@ class AttendanceApiClient {
                 pinnedBroadcast = pinnedBroadcast,
                 wardShopFloorEntry = wardShopFloor,
                 parentAlerts = parseParentAlerts(json.optJSONArray("parentAlerts")),
-                monthlyMarks = parseMonthlyMarks(json.optJSONArray("monthlyMarks"))
+                monthlyMarks = parseMonthlyMarks(json.optJSONArray("monthlyMarks")),
+                publishedReportUrl = json.optString(
+                    "publishedReportUrl",
+                    json.optString("attendancePdfUrl", json.optString("reportUrl", ""))
+                ).trim(),
+                publishedReportAt = IstDateTimeFormatter.formatDateTime(
+                    json.optString("publishedReportAt", json.optString("reportPublishedAt", "")),
+                    ""
+                )
             )
         }
     }
@@ -359,7 +375,15 @@ class AttendanceApiClient {
                 ),
                 dutyOverrides = parseDutyOverrides(json.opt("dutyOverrides")),
                 timetable = TimetableStore.parseJsonArray(json.optJSONArray("timetable")),
-                traineeTimetableEditEnabled = json.optBoolean("traineeTimetableEditEnabled", false)
+                traineeTimetableEditEnabled = json.optBoolean("traineeTimetableEditEnabled", false),
+                publishedReportUrl = json.optString(
+                    "publishedReportUrl",
+                    json.optString("attendancePdfUrl", json.optString("reportUrl", ""))
+                ).trim(),
+                publishedReportAt = IstDateTimeFormatter.formatDateTime(
+                    json.optString("publishedReportAt", json.optString("reportPublishedAt", "")),
+                    ""
+                )
             )
         }
     }

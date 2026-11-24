@@ -1,11 +1,14 @@
 package com.example
 
+import android.Manifest
 import android.content.Intent
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
@@ -20,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.notifications.AttendanceNotificationHelper
+import com.example.notifications.BackgroundSyncScheduler
 import com.example.security.BiometricAuthHelper
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.screens.LoginScreen
@@ -35,6 +39,15 @@ class MainActivity : FragmentActivity() {
 
     private val appViewModel: AppViewModel by viewModels()
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            AttendanceNotificationHelper.ensureChannels(this)
+            BackgroundSyncScheduler.ensureScheduled(this)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
@@ -42,6 +55,8 @@ class MainActivity : FragmentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
         AttendanceNotificationHelper.ensureChannels(this)
+        BackgroundSyncScheduler.ensureScheduled(this)
+        requestNotificationPermissionIfNeeded()
         handleIntentDeepLinks(intent)
 
         setContent {
@@ -54,16 +69,34 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        BackgroundSyncScheduler.ensureScheduled(this)
+        BackgroundSyncScheduler.scheduleQuickBackgroundCheck(this, delayMinutes = 2L)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIntentDeepLinks(intent)
     }
 
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !AttendanceNotificationHelper.hasNotificationPermission(this)
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     private fun handleIntentDeepLinks(intent: Intent?) {
         if (intent?.getBooleanExtra(AttendanceNotificationHelper.EXTRA_OPEN_NOTICES, false) == true) {
             appViewModel.handleOpenNoticesDeepLink()
             intent.removeExtra(AttendanceNotificationHelper.EXTRA_OPEN_NOTICES)
+        }
+        if (intent?.getBooleanExtra(AttendanceNotificationHelper.EXTRA_FROM_BACKGROUND_ALERT, false) == true) {
+            appViewModel.handleNotificationTapRefresh()
+            intent.removeExtra(AttendanceNotificationHelper.EXTRA_FROM_BACKGROUND_ALERT)
         }
     }
 }

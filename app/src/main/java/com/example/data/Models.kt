@@ -290,7 +290,9 @@ data class TraineeDashboardData(
     val myAcademicSubmission: AcademicSubmission? = null,
     val dutyOverrides: Map<String, DutyOverrideEntry> = emptyMap(),
     val timetable: List<TimetablePeriod> = emptyList(),
-    val traineeTimetableEditEnabled: Boolean = false
+    val traineeTimetableEditEnabled: Boolean = false,
+    val publishedReportUrl: String = "",
+    val publishedReportAt: String = ""
 )
 
 data class ParentAlertItem(
@@ -316,7 +318,9 @@ data class ParentDashboardData(
     val pinnedBroadcast: NoticeItem? = null,
     val wardShopFloorEntry: ShopFloorEntry? = null,
     val parentAlerts: List<ParentAlertItem>,
-    val monthlyMarks: List<MonthlyExamMark> = emptyList()
+    val monthlyMarks: List<MonthlyExamMark> = emptyList(),
+    val publishedReportUrl: String = "",
+    val publishedReportAt: String = ""
 )
 
 data class ParentAlertSubmitResult(
@@ -424,7 +428,9 @@ data class StaffDashboardData(
     val academicSubmissions: List<AcademicSubmission> = emptyList(),
     val dutyOverrides: Map<String, DutyOverrideEntry> = emptyMap(),
     val timetable: List<TimetablePeriod> = emptyList(),
-    val traineeTimetableEditEnabled: Boolean = false
+    val traineeTimetableEditEnabled: Boolean = false,
+    val publishedReportUrl: String = "",
+    val publishedReportAt: String = ""
 )
 
 data class LeaveSubmitResult(
