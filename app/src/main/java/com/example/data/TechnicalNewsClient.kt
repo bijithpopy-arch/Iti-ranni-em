@@ -9,214 +9,144 @@ import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
 import java.util.concurrent.TimeUnit
 
-data class TechNewsItem(
-    val id: String,
-    val title: String,
-    val summary: String,
-    val source: String,
-    val category: String, // "Electronics", "Embedded", "Power & Industrial", "Tech"
-    val link: String,
-    val publishedAt: String
-)
-
-/**
- * Fetches live technical news articles via public RSS/Atom feeds for Electronics Mechanic trainees
- * (Electronics, Embedded/Microcontrollers, Power & Industrial Systems, and General Engineering Tech).
- */
 class TechnicalNewsClient {
-
-    private data class FeedSpec(
-        val url: String,
-        val source: String,
-        val category: String
-    )
-
-    private val feeds = listOf(
-        FeedSpec(
-            url = "https://hackaday.com/blog/feed/",
-            source = "Hackaday",
-            category = "Embedded"
-        ),
-        FeedSpec(
-            url = "https://www.electronicsweekly.com/feed/",
-            source = "Electronics Weekly",
-            category = "Electronics"
-        ),
-        FeedSpec(
-            url = "https://blog.arduino.cc/feed/",
-            source = "Arduino Blog",
-            category = "Embedded"
-        ),
-        FeedSpec(
-            url = "https://spectrum.ieee.org/feeds/feed.rss",
-            source = "IEEE Spectrum",
-            category = "Power & Industrial"
-        )
-    )
-
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
         .build()
 
-    suspend fun fetchLiveNews(): ApiResult<List<TechNewsItem>> = withContext(Dispatchers.IO) {
-        val collected = mutableListOf<TechNewsItem>()
-        var lastError: String? = null
-
-        for (feed in feeds) {
-            try {
-                val request = Request.Builder()
-                    .url(feed.url)
-                    .get()
-                    .header("User-Agent", "ITI-Ranni-EM-Android/2.2")
-                    .header("Accept", "application/rss+xml, application/xml, text/xml")
-                    .build()
-
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string().orEmpty()
-                        if (body.isNotBlank()) {
-                            collected.addAll(parseRssOrAtom(body, feed).take(7))
-                        }
-                    } else {
-                        lastError = "HTTP ${response.code}"
-                    }
-                }
-            } catch (e: Exception) {
-                lastError = e.localizedMessage ?: "Network error"
+    suspend fun fetchElectronicsNews(): List<TechNewsItem> = withContext(Dispatchers.IO) {
+        val liveItems = try {
+            val req = Request.Builder()
+                .url("https://www.electronicsforu.com/feed")
+                .header("User-Agent", "ITIRanniEM/2.6")
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) emptyList()
+                else parseRss(resp.body?.string().orEmpty())
             }
+        } catch (_: Exception) {
+            emptyList()
         }
-
-        if (collected.isEmpty()) {
-            ApiResult.Error(
-                "Unable to load live technical news right now (${lastError ?: "Check internet connection"}). Tap Refresh to try again."
-            )
-        } else {
-            ApiResult.Success(collected.distinctBy { it.title.lowercase() })
-        }
+        if (liveItems.isNotEmpty()) liveItems + curatedBilingualBriefs() else curatedBilingualBriefs()
     }
 
-    private fun parseRssOrAtom(xml: String, feed: FeedSpec): List<TechNewsItem> {
-        val results = mutableListOf<TechNewsItem>()
+    private fun parseRss(xml: String): List<TechNewsItem> {
+        if (xml.isBlank()) return emptyList()
+        val items = mutableListOf<TechNewsItem>()
         try {
-            val factory = XmlPullParserFactory.newInstance().apply {
-                isNamespaceAware = false
-            }
+            val factory = XmlPullParserFactory.newInstance()
             val parser = factory.newPullParser()
             parser.setInput(StringReader(xml))
-
-            var inItem = false
-            var currentTag = ""
+            var event = parser.eventType
+            var insideItem = false
             var title = ""
-            var description = ""
+            var desc = ""
             var link = ""
             var pubDate = ""
-
-            var eventType = parser.eventType
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                when (eventType) {
+            while (event != XmlPullParser.END_DOCUMENT && items.size < 6) {
+                when (event) {
                     XmlPullParser.START_TAG -> {
-                        val name = parser.name.orEmpty().lowercase()
-                        currentTag = name
-                        if (name == "item" || name == "entry") {
-                            inItem = true
+                        val tag = parser.name.orEmpty().lowercase()
+                        if (tag == "item") {
+                            insideItem = true
                             title = ""
-                            description = ""
+                            desc = ""
                             link = ""
                             pubDate = ""
-                        } else if (inItem && name == "link") {
-                            val href = parser.getAttributeValue(null, "href")
-                            if (!href.isNullOrBlank()) {
-                                link = href.trim()
+                        } else if (insideItem) {
+                            when (tag) {
+                                "title" -> title = parser.nextText().trim()
+                                "description" -> desc = stripHtml(parser.nextText()).take(220)
+                                "link" -> link = parser.nextText().trim()
+                                "pubdate" -> pubDate = parser.nextText().trim().take(16)
                             }
                         }
                     }
-
-                    XmlPullParser.TEXT -> {
-                        if (inItem) {
-                            val text = parser.text.orEmpty()
-                            when (currentTag) {
-                                "title" -> title += text
-                                "description", "summary", "content", "content:encoded" -> {
-                                    if (description.length < 360) description += text
-                                }
-                                "link" -> if (link.isBlank()) link += text
-                                "pubdate", "published", "updated", "dc:date" -> {
-                                    if (pubDate.isBlank()) pubDate += text
-                                }
-                            }
-                        }
-                    }
-
                     XmlPullParser.END_TAG -> {
-                        val name = parser.name.orEmpty().lowercase()
-                        if (name == "item" || name == "entry") {
-                            val cleanTitle = stripHtml(title).trim()
-                            val cleanDesc = stripHtml(description).trim().take(200)
-                            val cleanLink = link.trim()
-                            if (cleanTitle.isNotBlank() && cleanLink.startsWith("http")) {
-                                results.add(
+                        if (parser.name.equals("item", ignoreCase = true) && insideItem) {
+                            insideItem = false
+                            if (title.isNotBlank()) {
+                                val topicMl = autoMalayalamTopicTag(title)
+                                items.add(
                                     TechNewsItem(
-                                        id = "${feed.source}_${cleanTitle.hashCode()}",
-                                        title = cleanTitle,
-                                        summary = cleanDesc.ifBlank { "Tap to read full article on ${feed.source}." },
-                                        source = feed.source,
-                                        category = inferCategory(cleanTitle, cleanDesc, feed.category),
-                                        link = cleanLink,
-                                        publishedAt = cleanDate(pubDate)
+                                        id = "RSS-${items.size + 1}",
+                                        titleEn = title,
+                                        titleMl = "$topicMl — $title",
+                                        summaryEn = desc.ifBlank { "Latest electronics & embedded industry update." },
+                                        summaryMl = "ഇലക്ട്രോണിക്സ് വ്യവസായത്തിലെ പുതിയ വാർത്ത: ${desc.ifBlank { title }}",
+                                        category = "Live Feed",
+                                        source = "Electronics For You",
+                                        publishedDate = pubDate,
+                                        url = link
                                     )
                                 )
                             }
-                            inItem = false
                         }
-                        currentTag = ""
                     }
                 }
-                eventType = parser.next()
+                event = parser.next()
             }
         } catch (_: Exception) {
-            // Return whatever parsed cleanly before malformed tag
+            return emptyList()
         }
-        return results
+        return items
     }
 
-    private fun inferCategory(title: String, desc: String, defaultCat: String): String {
-        val text = "$title $desc".lowercase()
+    private fun autoMalayalamTopicTag(title: String): String {
+        val lower = title.lowercase()
         return when {
-            text.contains("esp32") || text.contains("esp8266") || text.contains("arduino") ||
-                text.contains("stm32") || text.contains("microcontroller") || text.contains("fpga") ||
-                text.contains("firmware") || text.contains("raspberry pi") || text.contains("embedded") -> "Embedded"
-            text.contains("power") || text.contains("solar") || text.contains("inverter") ||
-                text.contains("motor") || text.contains("plc") || text.contains("industrial") ||
-                text.contains("grid") || text.contains("battery") || text.contains("ev ") -> "Power & Industrial"
-            text.contains("pcb") || text.contains("circuit") || text.contains("oscilloscope") ||
-                text.contains("transistor") || text.contains("mosfet") || text.contains("sensor") ||
-                text.contains("ic ") || text.contains("semiconductor") || text.contains("chip") -> "Electronics"
-            else -> defaultCat
+            "semiconductor" in lower || "chip" in lower || "ic" in lower -> "സെമികണ്ടക്ടർ & ചിപ്പ് സാങ്കേതികവിദ്യ"
+            "ev" in lower || "battery" in lower || "solar" in lower || "power" in lower -> "പവർ ഇലക്ട്രോണിക്സ് & EV"
+            "esp" in lower || "arduino" in lower || "iot" in lower || "sensor" in lower -> "എംബഡഡ് സിസ്റ്റംസ് & IoT"
+            "ai" in lower || "robot" in lower || "automation" in lower -> "ഓട്ടോമേഷൻ & റോബോട്ടിക്സ്"
+            else -> "ഇലക്ട്രോണിക്സ് ടെക് അപ്ഡേറ്റ്"
         }
     }
 
-    private fun stripHtml(raw: String): String {
-        return raw
-            .replace(Regex("<[^>]*>"), " ")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&#39;", "'")
-            .replace("&#8217;", "'")
-            .replace("&#8211;", "–")
-            .replace("&#8220;", "\"")
-            .replace("&#8221;", "\"")
-            .replace("&nbsp;", " ")
-            .replace(Regex("\\s+"), " ")
-    }
+    private fun stripHtml(raw: String): String =
+        raw.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
 
-    private fun cleanDate(raw: String): String {
-        val trimmed = raw.trim()
-        if (trimmed.isBlank()) return "Live"
-        return trimmed.substringBefore(" +").substringBefore(" GMT").take(22)
-    }
+    fun curatedBilingualBriefs(): List<TechNewsItem> = listOf(
+        TechNewsItem(
+            id = "CUR-1",
+            titleEn = "GaN & SiC Power Electronics Transforming Compact SMPS & EV Chargers",
+            titleMl = "കോംപാക്റ്റ് SMPS & EV ചാർജറുകളിൽ വിപ്ലവം സൃഷ്ടിക്കുന്ന GaN, SiC പവർ ഇലക്ട്രോണിക്സ്",
+            summaryEn = "Gallium Nitride (GaN) and Silicon Carbide MOSFETs run at higher switching frequencies with up to 40% lower heat loss than traditional silicon.",
+            summaryMl = "സാധാരണ സിലിക്കൺ ട്രാൻസിസ്റ്ററുകളേക്കാൾ ഉയർന്ന സ്വിച്ചിംഗ് ഫ്രീക്വൻസിയിലും 40% കുറവ് താപനഷ്ടത്തിലും പ്രവർത്തിക്കുന്ന GaN, SiC MOSFET-കൾ ആധുനിക SMPS, EV ചാർജറുകളിൽ വ്യാപകമാകുന്നു.",
+            category = "Power Electronics",
+            source = "EM Lab Brief",
+            publishedDate = "NCVT Trade Focus"
+        ),
+        TechNewsItem(
+            id = "CUR-2",
+            titleEn = "ESP32-C6 & Wi-Fi 6 IoT Modules for Smart Workshop Automation",
+            titleMl = "സ്മാർട്ട് വർക്ക്ഷോപ്പ് ഓട്ടോമേഷനായി ESP32-C6 & Wi-Fi 6 IoT മൊഡ്യൂളുകൾ",
+            summaryEn = "RISC-V based microcontrollers with built-in Wi-Fi 6, Zigbee, and Matter make industrial sensor telemetry faster and ultra-low power.",
+            summaryMl = "ബിൽറ്റ്-ഇൻ Wi-Fi 6, Zigbee സപ്പോർട്ടുള്ള RISC-V മൈക്രോകൺട്രോളറുകൾ വ്യവസായ സെൻസറുകളെയും RFID അറ്റൻഡൻസ് സംവിധാനങ്ങളെയും കൂടുതൽ കാര്യക്ഷമമാക്കുന്നു.",
+            category = "Embedded & IoT",
+            source = "ESP Lab Update",
+            publishedDate = "Trade Practical"
+        ),
+        TechNewsItem(
+            id = "CUR-3",
+            titleEn = "India Semiconductor Mission Boosts PCB Assembly & SMD Repair Careers",
+            titleMl = "ഇന്ത്യ സെമികണ്ടക്ടർ മിഷൻ: PCB അസംബ്ലി & SMD റിപ്പയർ മേഖലയിൽ വൻ തൊഴിലവസരങ്ങൾ",
+            summaryEn = "New OSAT chip packaging plants across India increase demand for NCVT Electronics Mechanics skilled in BGA rework and oscilloscope diagnostics.",
+            summaryMl = "ഇന്ത്യയിൽ പുതിയ ചിപ്പ് പാക്കേജിംഗ് പ്ലാന്റുകൾ വരുന്നതോടെ SMD സോൾഡറിംഗ്, ഓസിലോസ്കോപ്പ് ടെസ്റ്റിംഗ് പരിചയമുള്ള ഇലക്ട്രോണിക്സ് മെക്കാനിക് ട്രെയിനികൾക്ക് വലിയ സാധ്യതകൾ തുറക്കുന്നു.",
+            category = "Semiconductors",
+            source = "Skill India / DGT",
+            publishedDate = "Career Watch"
+        ),
+        TechNewsItem(
+            id = "CUR-4",
+            titleEn = "Solar Hybrid Inverters & LiFePO4 BMS Testing Standards",
+            titleMl = "സോളാർ ഹൈബ്രിഡ് ഇൻവെർട്ടറുകളും LiFePO4 ബാറ്ററി BMS ടെസ്റ്റിംഗ് രീതികളും",
+            summaryEn = "Learn how active cell balancing ICs protect lithium packs and why thermal cutoff sensors are critical in inverter servicing.",
+            summaryMl = "ആക്റ്റീവ് സെൽ ബാലൻസിംഗ് IC-കൾ ലിഥിയം ബാറ്ററികളെ സംരക്ഷിക്കുന്നതെങ്ങനെയെന്നും ഇൻവെർട്ടർ സർവീസിംഗിൽ തെർമൽ സെൻസറുകളുടെ പ്രാധാന്യവും അറിയുക.",
+            category = "Renewable & BMS",
+            source = "Govt. ITI Ranni",
+            publishedDate = "Lab Reference"
+        )
+    )
 }

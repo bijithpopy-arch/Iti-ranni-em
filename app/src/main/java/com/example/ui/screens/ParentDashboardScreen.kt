@@ -38,6 +38,7 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FamilyRestroom
+import androidx.compose.material.icons.rounded.Grade
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Refresh
@@ -68,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
@@ -76,7 +78,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.IstDateTimeFormatter
 import com.example.data.ParentAlertItem
@@ -86,6 +87,8 @@ import com.example.ui.components.ActiveHolidayBanner
 import com.example.ui.components.AttendanceFinalizationBanner
 import com.example.ui.components.AttendanceStatusPill
 import com.example.ui.components.CheckUpdateIconButton
+import com.example.ui.components.InlineAlertCard
+import com.example.ui.components.NoticeCardItem
 import com.example.ui.components.PinnedPrincipalBroadcastBanner
 import com.example.ui.components.TricolourRibbon
 import com.example.ui.theme.JetBrainsMonoFamily
@@ -126,12 +129,9 @@ fun ParentDashboardScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasNotifPermission = granted
-        if (granted) {
-            onEvaluateNotification()
-        }
+        if (granted) onEvaluateNotification()
     }
 
-    // Request POST_NOTIFICATIONS runtime permission on Android 13+ on first entry
     LaunchedEffect(Unit) {
         AttendanceNotificationHelper.ensureChannels(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotifPermission) {
@@ -139,14 +139,10 @@ fun ParentDashboardScreen(
         }
     }
 
-    // Trigger Absent / Half-Day notification strictly AFTER Instructor confirms & closes today's attendance (skipped on holidays)
     LaunchedEffect(data, hasNotifPermission) {
-        if (data != null && hasNotifPermission) {
-            onEvaluateNotification()
-        }
+        if (data != null && hasNotifPermission) onEvaluateNotification()
     }
 
-    // Auto-poll every 45 seconds while attendance is still Open so confirmed Absent/Half-Day alerts arrive promptly
     LaunchedEffect(data?.attendanceClosed) {
         if (data != null && !data.attendanceClosed) {
             while (true) {
@@ -170,7 +166,6 @@ fun ParentDashboardScreen(
     ) {
         TricolourRibbon(height = 3.dp)
 
-        // Top Parent Portal Header
         Surface(
             color = colors.cardSurface,
             border = BorderStroke(1.dp, colors.borderSubtle),
@@ -178,27 +173,16 @@ fun ParentDashboardScreen(
         ) {
             Column {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = colors.skyContainer
-                            ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(shape = RoundedCornerShape(6.dp), color = colors.skyContainer) {
                                 Text(
                                     text = "ROLL #${data?.roll ?: uiState.activeRoll}",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = JetBrainsMonoFamily,
-                                        fontWeight = FontWeight.Bold
-                                    ),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
                                     color = colors.skyAccent,
                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                                 )
@@ -213,17 +197,8 @@ fun ParentDashboardScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(5.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.FamilyRestroom,
-                                        contentDescription = null,
-                                        tint = colors.violetAccent,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.parent_portal_badge),
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = colors.violetAccent
-                                    )
+                                    Icon(Icons.Rounded.FamilyRestroom, contentDescription = null, tint = colors.violetAccent, modifier = Modifier.size(13.dp))
+                                    Text(stringResource(R.string.parent_portal_badge), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = colors.violetAccent)
                                 }
                             }
                         }
@@ -238,59 +213,30 @@ fun ParentDashboardScreen(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        CheckUpdateIconButton(
-                            isChecking = uiState.isCheckingUpdate,
-                            hasUpdate = uiState.availableUpdate != null,
-                            onClick = onCheckUpdate
-                        )
-                        IconButton(
-                            onClick = onRefresh,
-                            enabled = !uiState.isRefreshingParent,
-                            modifier = Modifier.testTag("parent_refresh_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Refresh,
-                                contentDescription = stringResource(R.string.action_refresh),
-                                tint = colors.skyAccent
-                            )
+                        CheckUpdateIconButton(uiState.isCheckingUpdate, uiState.availableUpdate != null, onCheckUpdate)
+                        IconButton(onClick = onRefresh, enabled = !uiState.isRefreshingParent, modifier = Modifier.testTag("parent_refresh_button")) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.action_refresh), tint = colors.skyAccent)
                         }
-                        IconButton(
-                            onClick = onLogout,
-                            modifier = Modifier.testTag("parent_logout_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.Logout,
-                                contentDescription = stringResource(R.string.action_logout),
-                                tint = colors.redAccent
-                            )
+                        IconButton(onClick = onLogout, modifier = Modifier.testTag("parent_logout_button")) {
+                            Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = stringResource(R.string.action_logout), tint = colors.redAccent)
                         }
                     }
                 }
                 if (uiState.isRefreshingParent) {
-                    LinearProgressIndicator(
-                        color = colors.skyAccent,
-                        trackColor = colors.cardElevated,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    LinearProgressIndicator(color = colors.skyAccent, trackColor = colors.cardElevated, modifier = Modifier.fillMaxWidth())
                 }
             }
         }
 
         LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .widthIn(max = 640.dp)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            modifier = Modifier.weight(1f).widthIn(max = 640.dp).fillMaxWidth(),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (uiState.parentBannerError != null) {
-                item {
-                    InlineAlertCard(message = uiState.parentBannerError, isError = true)
-                }
+                item { InlineAlertCard(message = uiState.parentBannerError, isError = true) }
             }
 
-            // Notification Permission Helper Banner on Android 13+ if denied
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotifPermission) {
                 item {
                     Surface(
@@ -299,223 +245,100 @@ fun ParentDashboardScreen(
                         border = BorderStroke(1.dp, colors.amberAccent.copy(alpha = 0.6f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.NotificationsOff,
-                                    contentDescription = null,
-                                    tint = colors.amberAccent
-                                )
-                                Text(
-                                    text = "Enable notifications to receive Absent & Half-Day status alerts once Instructor closes attendance.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Icon(Icons.Rounded.NotificationsOff, contentDescription = null, tint = colors.amberAccent)
+                                Text("Enable notifications for Absent & Half-Day alerts.", style = MaterialTheme.typography.bodySmall)
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            OutlinedButton(
-                                onClick = {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                },
-                                border = BorderStroke(1.dp, colors.amberAccent),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.amberAccent),
-                                modifier = Modifier.testTag("parent_enable_notif_button")
-                            ) {
-                                Text("Enable")
-                            }
+                            OutlinedButton(onClick = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text("Enable") }
                         }
                     }
                 }
             }
 
             if (data != null) {
-                // 0. Pinned Principal Broadcast Notice
-                if (data.pinnedBroadcast != null) {
-                    item {
-                        PinnedPrincipalBroadcastBanner(notice = data.pinnedBroadcast)
-                    }
-                }
-
-                // 1. Active Holiday Banner (prevents false ABSENT alerts)
-                if (data.todayHoliday != null) {
-                    item {
-                        ActiveHolidayBanner(holiday = data.todayHoliday)
-                    }
-                }
-
-                // 2. Attendance Open vs Confirmed/Closed Banner
+                if (data.pinnedBroadcast != null) item { PinnedPrincipalBroadcastBanner(notice = data.pinnedBroadcast) }
+                if (data.todayHoliday != null) item { ActiveHolidayBanner(holiday = data.todayHoliday) }
                 item {
-                    AttendanceFinalizationBanner(
-                        attendanceClosed = data.attendanceClosed,
-                        attendanceDate = data.attendanceDate,
-                        closedAt = data.closedAt
-                    )
+                    AttendanceFinalizationBanner(data.attendanceClosed, data.attendanceDate, data.closedAt)
                 }
 
-                // 3. Today's Status Card (ABSENT / HALF-DAY / PRESENT / HOLIDAY + ESP IN/OUT)
                 item {
-                    val effectiveStatus = if (data.todayHoliday != null) {
-                        "HOLIDAY"
-                    } else {
-                        data.attendance.todayStatus
-                    }
+                    val effectiveStatus = if (data.todayHoliday != null) "HOLIDAY" else data.attendance.todayStatus
                     Surface(
                         shape = RoundedCornerShape(20.dp),
                         color = colors.cardSurface,
                         border = BorderStroke(1.dp, colors.borderSubtle),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("parent_today_status_card")
+                        modifier = Modifier.fillMaxWidth().testTag("parent_today_status_card")
                     ) {
-                        Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
+                        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                 Column {
-                                    Text(
-                                        text = "Ward's Attendance Today",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Date: ${data.attendanceDate}",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                                        color = colors.textMuted
-                                    )
+                                    Text("Ward's Attendance Today", style = MaterialTheme.typography.titleMedium)
+                                    Text("Date: ${data.attendanceDate}", style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.textMuted)
                                 }
                                 AttendanceStatusPill(status = effectiveStatus)
                             }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                ParentTimeTile(
-                                    label = "MORNING IN",
-                                    timeValue = IstDateTimeFormatter.formatTimeOnly(data.attendance.inT),
-                                    accentColor = colors.emeraldAccent,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                ParentTimeTile(
-                                    label = "AFTERNOON OUT",
-                                    timeValue = IstDateTimeFormatter.formatTimeOnly(data.attendance.outT),
-                                    accentColor = colors.amberAccent,
-                                    modifier = Modifier.weight(1f)
-                                )
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                ParentTimeTile("MORNING IN", IstDateTimeFormatter.formatTimeOnly(data.attendance.inT), colors.emeraldAccent, Modifier.weight(1f))
+                                ParentTimeTile("AFTERNOON OUT", IstDateTimeFormatter.formatTimeOnly(data.attendance.outT), colors.amberAccent, Modifier.weight(1f))
                             }
-
                             if (uiState.parentNotificationDispatched) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.NotificationsActive,
-                                        contentDescription = null,
-                                        tint = colors.emeraldAccent,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = "Status alert notification sent to your device.",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = colors.emeraldAccent
-                                    )
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Rounded.NotificationsActive, contentDescription = null, tint = colors.emeraldAccent, modifier = Modifier.size(16.dp))
+                                    Text("Status alert sent to your device.", style = MaterialTheme.typography.labelSmall, color = colors.emeraldAccent)
                                 }
                             }
                         }
                     }
                 }
 
-                // 4. Attendance Percentage Summary Ring Card
                 item {
-                    ParentAttendanceRingCard(
-                        pct = data.attendance.pct,
-                        present = data.attendance.present,
-                        half = data.attendance.half,
-                        total = data.attendance.total
-                    )
+                    ParentAttendanceRingCard(data.attendance.pct, data.attendance.present, data.attendance.half, data.attendance.total)
                 }
 
-                // 4b. Monthly Theory & Lab Exam Marks Section (with Parent Notification Banner)
+                // Digitally Signed Exam Marks for Ward
                 item {
-                    val hasMarksAlert = uiState.parentMarksNotificationDispatched ||
-                        data.parentAlerts.any {
-                            it.alertType.equals(ParentAlertTypes.MARKS_PUBLISHED, true) ||
-                                it.alertType.equals(ParentAlertTypes.MARKS_UPDATED, true)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.Grade, contentDescription = null, tint = colors.amberAccent)
+                        Text("Ward's Digitally Signed Exam Marks", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+                if (data.monthlyMarks.isEmpty()) {
+                    item {
+                        Surface(shape = RoundedCornerShape(14.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+                            Text("No exam marks published yet.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted, modifier = Modifier.padding(14.dp))
                         }
-                    ParentMonthlyMarksSection(
-                        studentName = data.studentName,
-                        roll = data.roll,
-                        marks = data.monthlyMarks,
-                        hasMarksAlertNotification = hasMarksAlert
-                    )
+                    }
+                } else {
+                    items(data.monthlyMarks, key = { "par_mk_${it.id}_${it.monthLabel}" }) { mark ->
+                        TraineeSignedMarkCard(mark = mark)
+                    }
                 }
 
-                // Feedback banner for BUNK_ALERT / LEAVE_REASON submission
                 if (uiState.parentAlertSuccessMessage != null) {
                     item {
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = colors.emeraldContainer,
                             border = BorderStroke(1.dp, colors.emeraldAccent.copy(alpha = 0.6f)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("parent_alert_success_banner")
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    modifier = Modifier.weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.CheckCircle,
-                                        contentDescription = null,
-                                        tint = colors.emeraldAccent
-                                    )
-                                    Text(
-                                        text = uiState.parentAlertSuccessMessage,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
+                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = colors.emeraldAccent)
+                                    Text(uiState.parentAlertSuccessMessage, style = MaterialTheme.typography.bodySmall)
                                 }
-                                IconButton(onClick = onDismissFeedback) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Dismiss",
-                                        tint = colors.textMuted,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                IconButton(onClick = onDismissFeedback) { Icon(Icons.Rounded.Close, contentDescription = "Dismiss", modifier = Modifier.size(18.dp)) }
                             }
                         }
                     }
                 }
 
                 if (uiState.parentAlertError != null) {
-                    item {
-                        InlineAlertCard(message = uiState.parentAlertError, isError = true)
-                    }
+                    item { InlineAlertCard(message = uiState.parentAlertError, isError = true) }
                 }
 
-                // 5. Report Bunking / Left Home Card (BUNK_ALERT)
                 item {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
@@ -523,101 +346,41 @@ fun ParentDashboardScreen(
                         border = BorderStroke(1.5.dp, colors.redAccent.copy(alpha = 0.55f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(CircleShape)
-                                        .background(colors.redContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.ReportProblem,
-                                        contentDescription = null,
-                                        tint = colors.redAccent,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Box(modifier = Modifier.size(38.dp).clip(CircleShape).background(colors.redContainer), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.ReportProblem, contentDescription = null, tint = colors.redAccent, modifier = Modifier.size(20.dp))
                                 }
                                 Column {
-                                    Text(
-                                        text = "Report Bunking / Left Home",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Alert Trade Instructor immediately if your ward left home but is absent",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colors.textMuted
-                                    )
+                                    Text("Report Bunking / Left Home", style = MaterialTheme.typography.titleMedium)
+                                    Text("Alert Trade Instructor immediately if ward left home but is absent", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                                 }
                             }
-
                             OutlinedTextField(
                                 value = bunkNote,
                                 onValueChange = { bunkNote = it },
                                 label = { Text("Optional Note (English / Manglish / മലയാളം)") },
-                                placeholder = { Text("e.g., വീട്ടിൽ നിന്ന് 8:30 AM-ന് ഇറങ്ങിയിട്ടുണ്ട്") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = colors.redAccent,
-                                    unfocusedBorderColor = colors.borderSubtle,
-                                    focusedContainerColor = MaterialTheme.colorScheme.background,
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.background
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("parent_bunk_note_input")
+                                modifier = Modifier.fillMaxWidth().testTag("parent_bunk_note_input")
                             )
-
                             Button(
-                                onClick = {
-                                    onSubmitBunkAlert(bunkNote) { bunkNote = "" }
-                                },
+                                onClick = { onSubmitBunkAlert(bunkNote) { bunkNote = "" } },
                                 enabled = !uiState.isSubmittingParentAlert,
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = colors.redAccent,
-                                    contentColor = MaterialTheme.colorScheme.onError
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp)
-                                    .testTag("parent_bunk_alert_button")
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.redAccent, contentColor = MaterialTheme.colorScheme.onError),
+                                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("parent_bunk_alert_button")
                             ) {
                                 if (uiState.isSubmittingParentAlert) {
-                                    CircularProgressIndicator(
-                                        color = MaterialTheme.colorScheme.onError,
-                                        strokeWidth = 2.5.dp,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text("Sending Alert...")
+                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onError, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                                 } else {
-                                    Icon(
-                                        imageVector = Icons.Rounded.ReportProblem,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(19.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = stringResource(R.string.action_report_bunking),
-                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-                                    )
+                                    Text(stringResource(R.string.action_report_bunking), fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     }
                 }
 
-                // 6. Leave Reason Form (LEAVE_REASON — Manglish & Malayalam supported)
                 item {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
@@ -625,143 +388,56 @@ fun ParentDashboardScreen(
                         border = BorderStroke(1.dp, colors.borderSubtle),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(
-                            modifier = Modifier.padding(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(CircleShape)
-                                        .background(colors.skyContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Sms,
-                                        contentDescription = null,
-                                        tint = colors.skyAccent,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Box(modifier = Modifier.size(38.dp).clip(CircleShape).background(colors.skyContainer), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.Sms, contentDescription = null, tint = colors.skyAccent, modifier = Modifier.size(20.dp))
                                 }
                                 Column {
-                                    Text(
-                                        text = "Submit Leave Reason",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Supports English, Manglish & മലയാളം",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colors.skyAccent
-                                    )
+                                    Text("Submit Leave Reason", style = MaterialTheme.typography.titleMedium)
+                                    Text("Supports English, Manglish & മലയാളം", style = MaterialTheme.typography.bodySmall, color = colors.skyAccent)
                                 }
                             }
-
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 items(QUICK_MALAYALAM_LEAVE_REASONS) { suggestion ->
                                     FilterChip(
                                         selected = leaveReasonText == suggestion,
                                         onClick = { leaveReasonText = suggestion },
-                                        label = {
-                                            Text(
-                                                text = suggestion,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = colors.skyContainer,
-                                            selectedLabelColor = colors.skyAccent,
-                                            containerColor = MaterialTheme.colorScheme.background,
-                                            labelColor = colors.textMuted
-                                        ),
-                                        border = FilterChipDefaults.filterChipBorder(
-                                            enabled = true,
-                                            selected = leaveReasonText == suggestion,
-                                            borderColor = colors.borderSubtle,
-                                            selectedBorderColor = colors.skyAccent
-                                        )
+                                        label = { Text(suggestion, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                                     )
                                 }
                             }
-
                             OutlinedTextField(
                                 value = leaveReasonText,
                                 onValueChange = { leaveReasonText = it },
-                                label = { Text("Leave Reason (English / Manglish / മലയാളം)") },
-                                placeholder = { Text("Type reason e.g., Pani aayathukondu innu leave aanu / പനി ആയതിനാൽ ഇന്ന് അവധിയാണ്") },
-                                minLines = 3,
-                                maxLines = 5,
+                                label = { Text("Leave Reason") },
+                                minLines = 2,
                                 shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = colors.skyAccent,
-                                    unfocusedBorderColor = colors.borderSubtle,
-                                    focusedContainerColor = MaterialTheme.colorScheme.background,
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.background
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("parent_leave_reason_input")
+                                modifier = Modifier.fillMaxWidth().testTag("parent_leave_reason_input")
                             )
-
                             Button(
-                                onClick = {
-                                    onSubmitLeaveReason(leaveReasonText) { leaveReasonText = "" }
-                                },
-                                enabled = !uiState.isSubmittingParentAlert,
+                                onClick = { onSubmitLeaveReason(leaveReasonText) { leaveReasonText = "" } },
+                                enabled = !uiState.isSubmittingParentAlert && leaveReasonText.isNotBlank(),
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = colors.skyAccent,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp)
-                                    .testTag("parent_submit_leave_reason_button")
+                                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("parent_submit_leave_reason_button")
                             ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.Send,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Send Leave Reason to Instructor",
-                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-                                )
+                                Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Send Leave Reason to Instructor", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
 
-                // 7. Recent Parent Reports History
                 if (data.parentAlerts.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Recent Parent Submissions",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                    item { Text("Recent Parent Submissions", style = MaterialTheme.typography.titleMedium) }
                     items(data.parentAlerts, key = { it.id.ifBlank { "${it.date}_${it.time}_${it.hashCode()}" } }) { alert ->
                         ParentAlertCard(alert = alert)
                     }
                 }
 
-                // 8. Latest College Notices Preview for Parents
                 if (data.notices.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Latest College & Trade Notices",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                    item { Text("Latest College & Trade Notices", style = MaterialTheme.typography.titleMedium) }
                     items(data.notices.take(3), key = { "parent_notice_${it.id}" }) { notice ->
                         NoticeCardItem(notice = notice, isUnread = false)
                     }
@@ -772,127 +448,42 @@ fun ParentDashboardScreen(
 }
 
 @Composable
-private fun ParentTimeTile(
-    label: String,
-    timeValue: String,
-    accentColor: androidx.compose.ui.graphics.Color,
-    modifier: Modifier = Modifier
-) {
+private fun ParentTimeTile(label: String, timeValue: String, accentColor: Color, modifier: Modifier = Modifier) {
     val colors = LocalItiColors.current
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.background,
-        border = BorderStroke(1.dp, colors.borderSubtle),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Sensors,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                    color = colors.textMuted
-                )
+    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.background, border = BorderStroke(1.dp, colors.borderSubtle), modifier = modifier) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Rounded.Sensors, contentDescription = null, tint = accentColor, modifier = Modifier.size(14.dp))
+                Text(label, style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.textMuted)
             }
-            Text(
-                text = timeValue.ifBlank { "-" },
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontFamily = JetBrainsMonoFamily,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Text(timeValue.ifBlank { "-" }, style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold))
         }
     }
 }
 
 @Composable
-private fun ParentAttendanceRingCard(
-    pct: Int,
-    present: Int,
-    half: Int,
-    total: Int
-) {
+private fun ParentAttendanceRingCard(pct: Int, present: Int, half: Int, total: Int) {
     val colors = LocalItiColors.current
     val clamped = pct.coerceIn(0, 100)
-    val animatedSweep by animateFloatAsState(
-        targetValue = (clamped / 100f) * 360f,
-        animationSpec = tween(durationMillis = 800),
-        label = "parent_ring"
-    )
+    val animatedSweep by animateFloatAsState(targetValue = (clamped / 100f) * 360f, animationSpec = tween(800), label = "parent_ring")
     val ringColors = when {
         clamped >= 80 -> listOf(colors.skyAccent, colors.emeraldAccent)
         clamped >= 75 -> listOf(colors.amberAccent, colors.skyAccent)
         else -> listOf(colors.redAccent, colors.amberAccent)
     }
-
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = colors.cardSurface,
-        border = BorderStroke(1.dp, colors.borderSubtle),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(102.dp)
-            ) {
+    Surface(shape = RoundedCornerShape(20.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(98.dp)) {
                 val trackColor = colors.borderSubtle
                 Canvas(modifier = Modifier.fillMaxSize().padding(6.dp)) {
-                    drawArc(
-                        color = trackColor,
-                        startAngle = -90f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        style = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                    drawArc(
-                        brush = Brush.sweepGradient(colors = ringColors),
-                        startAngle = -90f,
-                        sweepAngle = animatedSweep,
-                        useCenter = false,
-                        style = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round)
-                    )
+                    drawArc(color = trackColor, startAngle = -90f, sweepAngle = 360f, useCenter = false, style = Stroke(10.dp.toPx(), cap = StrokeCap.Round))
+                    drawArc(brush = Brush.sweepGradient(ringColors), startAngle = -90f, sweepAngle = animatedSweep, useCenter = false, style = Stroke(10.dp.toPx(), cap = StrokeCap.Round))
                 }
-                Text(
-                    text = "$clamped%",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontFamily = JetBrainsMonoFamily,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Text("$clamped%", style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold))
             }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Overall Attendance",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Present: $present  •  Half-Day: $half  •  Total: $total",
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
-                    color = colors.textMuted
-                )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Overall Attendance", style = MaterialTheme.typography.titleMedium)
+                Text("Present: $present • Half-Day: $half • Total: $total", style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.textMuted)
                 Text(
                     text = if (clamped >= 80) "DGT Exam Eligibility Met (>= 80%)" else "Attendance Below 80% DGT Requirement",
                     style = MaterialTheme.typography.labelSmall,
@@ -904,235 +495,22 @@ private fun ParentAttendanceRingCard(
 }
 
 @Composable
-fun ParentAlertCard(
-    alert: ParentAlertItem,
-    modifier: Modifier = Modifier
-) {
+fun ParentAlertCard(alert: ParentAlertItem, modifier: Modifier = Modifier) {
     val colors = LocalItiColors.current
-    val typeUpper = alert.alertType.trim().uppercase()
-    val (badgeBg, badgeFg, badgeLabel) = when (typeUpper) {
-        ParentAlertTypes.BUNK_ALERT -> Triple(colors.redContainer, colors.redAccent, "BUNK ALERT")
-        ParentAlertTypes.MARKS_PUBLISHED -> Triple(colors.emeraldContainer, colors.emeraldAccent, "MARKS PUBLISHED")
-        ParentAlertTypes.MARKS_UPDATED -> Triple(colors.violetContainer, colors.violetAccent, "MARKS UPDATED")
-        ParentAlertTypes.TRAINEE_RUNNING_LATE -> Triple(colors.amberContainer, colors.amberAccent, "RUNNING LATE")
-        ParentAlertTypes.LOW_ATTENDANCE_WARNING -> Triple(colors.amberContainer, colors.amberAccent, "LOW ATTENDANCE")
-        ParentAlertTypes.ABSENCE_ALERT -> Triple(colors.redContainer, colors.redAccent, "ABSENCE ALERT")
-        else -> Triple(colors.skyContainer, colors.skyAccent, "LEAVE REASON")
+    val typeUpper = alert.alertType.uppercase()
+    val accent = when {
+        typeUpper == ParentAlertTypes.BUNK_ALERT -> colors.redAccent
+        typeUpper.contains("MARKS") -> colors.emeraldAccent
+        else -> colors.skyAccent
     }
-    val isUrgentBorder = typeUpper == ParentAlertTypes.BUNK_ALERT || typeUpper == ParentAlertTypes.ABSENCE_ALERT
-
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = colors.cardSurface,
-        border = BorderStroke(1.dp, if (isUrgentBorder) colors.redAccent.copy(alpha = 0.55f) else colors.borderSubtle),
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("parent_alert_card_${alert.id}")
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = badgeBg,
-                        border = BorderStroke(1.dp, badgeFg.copy(alpha = 0.45f))
-                    ) {
-                        Text(
-                            text = badgeLabel,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = JetBrainsMonoFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp
-                            ),
-                            color = badgeFg,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                    if (alert.roll.isNotBlank()) {
-                        Text(
-                            text = "Roll #${alert.roll} • ${alert.studentName}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                Text(
-                    text = listOf(alert.date, alert.time).filter { it.isNotBlank() }.joinToString(" "),
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                    color = colors.textMuted
-                )
+    Surface(shape = RoundedCornerShape(16.dp), color = colors.cardSurface, border = BorderStroke(1.dp, accent.copy(alpha = 0.5f)), modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Roll #${alert.roll} • ${alert.studentName}", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                Text(typeUpper.replace("_", " "), style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = accent)
             }
-
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.background,
-                border = BorderStroke(1.dp, colors.borderSubtle),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = alert.message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(10.dp)
-                )
-            }
-        }
-    }
-}
-private fun readMarkField(obj: Any, vararg getterNames: String): String {
-    for (name in getterNames) {
-        val value = runCatching { obj.javaClass.getMethod(name).invoke(obj)?.toString() }.getOrNull()
-        if (!value.isNullOrBlank()) return value
-    }
-    return ""
-}
-
-@Composable
-private fun ParentMonthlyMarksSection(
-    studentName: String,
-    roll: String,
-    marks: List<Any>,
-    hasMarksAlertNotification: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val colors = LocalItiColors.current
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = colors.cardSurface,
-        border = BorderStroke(
-            1.dp,
-            if (hasMarksAlertNotification) colors.violetAccent.copy(alpha = 0.6f) else colors.borderSubtle
-        ),
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("parent_monthly_marks_section")
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Monthly Exam Marks",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "$studentName (Roll #$roll)",
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                        color = colors.textMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (hasMarksAlertNotification) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = colors.violetContainer,
-                        border = BorderStroke(1.dp, colors.violetAccent.copy(alpha = 0.5f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.NotificationsActive,
-                                contentDescription = null,
-                                tint = colors.violetAccent,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = "UPDATED",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = JetBrainsMonoFamily,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp
-                                ),
-                                color = colors.violetAccent
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (marks.isEmpty()) {
-                Text(
-                    text = "No monthly theory or lab exam marks published yet.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textMuted
-                )
-            } else {
-                marks.forEach { item ->
-                    val month = readMarkField(item, "getMonthLabel", "getMonth", "getExamMonth").ifBlank { "Monthly Exam" }
-                    val examDate = readMarkField(item, "getExamDate", "getDate")
-                    val theory = readMarkField(item, "getTheoryMarks", "getTheory").ifBlank { "-" }
-                    val theoryMax = readMarkField(item, "getTheoryMax").ifBlank { "50" }
-                    val lab = readMarkField(item, "getLabMarks", "getLab", "getPracticalMarks").ifBlank { "-" }
-                    val labMax = readMarkField(item, "getLabMax").ifBlank { "100" }
-                    val remarks = readMarkField(item, "getRemarks", "getRemark")
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.background,
-                        border = BorderStroke(1.dp, colors.borderSubtle),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = month,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                if (examDate.isNotBlank()) {
-                                    Text(
-                                        text = examDate,
-                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                                        color = colors.textMuted
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "Theory: $theory / $theoryMax   •   Lab: $lab / $labMax",
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
-                                color = colors.emeraldAccent
-                            )
-                            if (remarks.isNotBlank()) {
-                                Text(
-                                    text = remarks,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.textMuted
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+            Text(alert.message, style = MaterialTheme.typography.bodySmall)
+            Text(listOf(alert.date, alert.time).filter { it.isNotBlank() }.joinToString(" • "), style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.textMuted)
         }
     }
 }

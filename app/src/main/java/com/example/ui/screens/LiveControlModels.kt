@@ -15,7 +15,7 @@ data class RemoteAppConfig(
 ) {
     companion object {
         fun fromMap(map: Map<String, String>): RemoteAppConfig = RemoteAppConfig(
-            developerPin = map["developerPin"]?.ifBlank { "0000" } ?: "0000",
+            developerPin = map["developerPin"]?.ifBlank { "9037" } ?: "9037",
             updaterEnabled = map["updaterEnabled"]?.lowercase() != "false",
             releaseUpdateToUsers = map["releaseUpdateToUsers"]?.lowercase() == "true",
             instructorAccessEnabled = map["instructorAccessEnabled"]?.lowercase() != "false",
@@ -34,7 +34,7 @@ data class RemoteUiConfig(
     val appTitle: String = "Govt. ITI Ranni - Electronics Mechanic (2025-27)",
     val traineeTabTitle: String = "Trainee Portal",
     val staffTabTitle: String = "Staff Console",
-    val examMarksTabTitle: String = "Exam Marks (Theory 50 / Lab 100)",
+    val examMarksTabTitle: String = "Exam Marks (Theory 50 / Practical 100)",
     val shopFloorTabTitle: String = "Shop Floor",
     val showReportBugButton: Boolean = true,
     val showUndoButton: Boolean = true,
@@ -54,8 +54,8 @@ data class RemoteUiConfig(
                 ?: "Govt. ITI Ranni - Electronics Mechanic (2025-27)",
             traineeTabTitle = map["traineeTabTitle"]?.ifBlank { "Trainee Portal" } ?: "Trainee Portal",
             staffTabTitle = map["staffTabTitle"]?.ifBlank { "Staff Console" } ?: "Staff Console",
-            examMarksTabTitle = map["examMarksTabTitle"]?.ifBlank { "Exam Marks (Theory 50 / Lab 100)" }
-                ?: "Exam Marks (Theory 50 / Lab 100)",
+            examMarksTabTitle = map["examMarksTabTitle"]?.ifBlank { "Exam Marks (Theory 50 / Practical 100)" }
+                ?: "Exam Marks (Theory 50 / Practical 100)",
             shopFloorTabTitle = map["shopFloorTabTitle"]?.ifBlank { "Shop Floor" } ?: "Shop Floor",
             showReportBugButton = map["showReportBugButton"]?.lowercase() != "false",
             showUndoButton = map["showUndoButton"]?.lowercase() != "false",
@@ -74,7 +74,7 @@ data class ExamMarkRow(
     val remarks: String = "",
     val published: Boolean = false
 ) {
-    val theoryInt: Int get() = theoryMarks.toIntOrNull()?.coerceIn(0, 50) ?: 0
-    val labInt: Int get() = labMarks.toIntOrNull()?.coerceIn(0, 100) ?: 0
-    val totalOutOf150: Int get() = theoryInt + labInt
+    fun theoryClamped(max: Int = 50): Int = (theoryMarks.toIntOrNull() ?: 0).coerceIn(0, max.coerceAtLeast(1))
+    fun labClamped(max: Int = 100): Int = (labMarks.toIntOrNull() ?: 0).coerceIn(0, max.coerceAtLeast(1))
+    fun total(theoryMax: Int = 50, labMax: Int = 100): Int = theoryClamped(theoryMax) + labClamped(labMax)
 }

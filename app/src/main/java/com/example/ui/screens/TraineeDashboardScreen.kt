@@ -40,29 +40,24 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.outlined.CalendarViewWeek
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.EventRepeat
 import androidx.compose.material.icons.outlined.Grade
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Workspaces
 import androidx.compose.material.icons.rounded.AccessTime
-import androidx.compose.material.icons.rounded.CalendarViewWeek
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.EventNote
 import androidx.compose.material.icons.rounded.EventRepeat
 import androidx.compose.material.icons.rounded.Grade
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Sensors
-import androidx.compose.material.icons.rounded.Workspaces
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -84,6 +79,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -100,7 +96,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -112,6 +107,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.AttendanceMath
 import com.example.data.AttendanceSummary
 import com.example.data.IstDateTimeFormatter
 import com.example.data.TimetablePeriod
@@ -125,6 +121,7 @@ import com.example.ui.components.CheckUpdateIconButton
 import com.example.ui.components.DigitalSignaturePad
 import com.example.ui.components.EspStatusBadge
 import com.example.ui.components.ExternalUrlHelper
+import com.example.ui.components.InlineAlertCard
 import com.example.ui.components.LeaveStatusBadge
 import com.example.ui.components.PinnedPrincipalBroadcastBanner
 import com.example.ui.components.TricolourRibbon
@@ -133,12 +130,7 @@ import com.example.ui.theme.LocalItiColors
 import com.example.viewmodel.AppUiState
 
 private val LEAVE_TYPES = listOf("1-Hour Permission", "Half-Day Leave")
-private val QUICK_TIME_WINDOWS = listOf(
-    "11:00 AM - 12:00 PM",
-    "02:00 PM - 03:00 PM",
-    "Afternoon Session",
-    "Forenoon Session"
-)
+private val QUICK_TIME_WINDOWS = listOf("11:00 AM - 12:00 PM", "02:00 PM - 03:00 PM", "Afternoon Session", "Forenoon Session")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -160,15 +152,15 @@ fun TraineeDashboardScreen(
         currentMarkNote: String,
         traineeNote: String,
         onSuccessReset: () -> Unit
-    ) -> Unit = { _, _, _, _, _ -> },
-    onDismissWorkQueryFeedback: () -> Unit = {},
+    ) -> Unit,
+    onDismissWorkQueryFeedback: () -> Unit,
     onSubmitRunningLate: (
         expectedArrival: String,
         reasonCategory: String,
         details: String,
         onSuccessReset: () -> Unit
-    ) -> Unit = { _, _, _, _ -> },
-    onDismissRunningLateFeedback: () -> Unit = {},
+    ) -> Unit,
+    onDismissRunningLateFeedback: () -> Unit,
     onSubmitAcademicRecord: (
         theoryTopic: String,
         theoryStatus: String,
@@ -177,14 +169,15 @@ fun TraineeDashboardScreen(
         labStatus: String,
         labSignedDate: String,
         remarks: String
-    ) -> Unit = { _, _, _, _, _, _, _ -> },
-    onRefreshAcademicSubmission: () -> Unit = {},
-    onDismissAcademicFeedback: () -> Unit = {},
-    onRefreshTechNews: () -> Unit = {},
-    onSaveLocalTimetable: (List<TimetablePeriod>) -> Unit = {},
-    onResetTimetableToOfficial: () -> Unit = {},
-    onSubmitSharedTimetable: (List<TimetablePeriod>) -> Unit = {},
-    onDismissTimetableFeedback: () -> Unit = {},
+    ) -> Unit,
+    onRefreshAcademicSubmission: () -> Unit,
+    onDismissAcademicFeedback: () -> Unit,
+    onRefreshTechNews: () -> Unit,
+    onSelectNewsLanguage: (NewsLanguageFilter) -> Unit,
+    onSaveLocalTimetable: (List<TimetablePeriod>) -> Unit,
+    onResetTimetableToOfficial: () -> Unit,
+    onSubmitSharedTimetable: (List<TimetablePeriod>) -> Unit,
+    onDismissTimetableFeedback: () -> Unit,
     onCheckUpdate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -225,7 +218,7 @@ fun TraineeDashboardScreen(
 
     var selectedType by remember { mutableStateOf(LEAVE_TYPES.first()) }
     var typeMenuExpanded by remember { mutableStateOf(false) }
-    var timeWindow by remember { mutableStateOf("11:00 AM - 12:00 PM") }
+    var timeWindow by remember { mutableStateOf(QUICK_TIME_WINDOWS.first()) }
     var reason by remember { mutableStateOf("") }
     var signature by remember { mutableStateOf("") }
     var sigResetKey by remember { mutableIntStateOf(0) }
@@ -260,10 +253,7 @@ fun TraineeDashboardScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = colors.skyContainer
-                                ) {
+                                Surface(shape = RoundedCornerShape(6.dp), color = colors.skyContainer) {
                                     Text(
                                         text = "ROLL #${data?.roll ?: uiState.activeRoll}",
                                         style = MaterialTheme.typography.labelSmall.copy(
@@ -297,37 +287,20 @@ fun TraineeDashboardScreen(
                                 enabled = !uiState.isRefreshingTrainee,
                                 modifier = Modifier.testTag("trainee_refresh_button")
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Refresh,
-                                    contentDescription = stringResource(R.string.action_refresh),
-                                    tint = colors.skyAccent
-                                )
+                                Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.action_refresh), tint = colors.skyAccent)
                             }
                             IconButton(
                                 onClick = onLogout,
                                 modifier = Modifier.testTag("trainee_logout_button")
                             ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.Logout,
-                                    contentDescription = stringResource(R.string.action_logout),
-                                    tint = colors.redAccent
-                                )
+                                Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = stringResource(R.string.action_logout), tint = colors.redAccent)
                             }
                         }
                     }
                     if (uiState.isRefreshingTrainee) {
-                        LinearProgressIndicator(
-                            color = colors.skyAccent,
-                            trackColor = colors.cardElevated,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        LinearProgressIndicator(color = colors.skyAccent, trackColor = colors.cardElevated, modifier = Modifier.fillMaxWidth())
                     } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(colors.borderSubtle)
-                        )
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.borderSubtle))
                     }
                 }
             },
@@ -343,14 +316,7 @@ fun TraineeDashboardScreen(
                             NavigationBarItem(
                                 selected = selected,
                                 onClick = { onTabSelected(tab) },
-                                icon = {
-                                    TraineeTabIcon(
-                                        tab = tab,
-                                        selected = selected,
-                                        unreadNotices = uiState.unreadNoticeCount,
-                                        projectsLocked = !(data?.projectGroupsEnabled ?: false)
-                                    )
-                                },
+                                icon = { TraineeTabIcon(tab, selected, uiState.unreadNoticeCount) },
                                 label = {
                                     Text(
                                         text = tab.label,
@@ -392,17 +358,8 @@ fun TraineeDashboardScreen(
                             NavigationRailItem(
                                 selected = selected,
                                 onClick = { onTabSelected(tab) },
-                                icon = {
-                                    TraineeTabIcon(
-                                        tab = tab,
-                                        selected = selected,
-                                        unreadNotices = uiState.unreadNoticeCount,
-                                        projectsLocked = !(data?.projectGroupsEnabled ?: false)
-                                    )
-                                },
-                                label = {
-                                    Text(text = tab.label, style = MaterialTheme.typography.labelSmall)
-                                },
+                                icon = { TraineeTabIcon(tab, selected, uiState.unreadNoticeCount) },
+                                label = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
                                 colors = NavigationRailItemDefaults.colors(
                                     selectedIconColor = colors.skyAccent,
                                     selectedTextColor = colors.skyAccent,
@@ -417,42 +374,26 @@ fun TraineeDashboardScreen(
                 }
 
                 Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     contentAlignment = Alignment.TopCenter
                 ) {
                     when (uiState.selectedTraineeTab) {
                         TraineeTab.HOME -> {
                             LazyColumn(
-                                modifier = Modifier
-                                    .widthIn(max = 640.dp)
-                                    .fillMaxSize(),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                                modifier = Modifier.widthIn(max = 640.dp).fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
                                 if (uiState.traineeBannerError != null) {
-                                    item {
-                                        InlineAlertCard(message = uiState.traineeBannerError, isError = true)
-                                    }
+                                    item { InlineAlertCard(message = uiState.traineeBannerError, isError = true) }
                                 }
-
                                 if (data != null) {
-                                    // Pinned Principal Broadcast Notice (Top of Dashboard)
                                     if (data.pinnedBroadcast != null) {
-                                        item {
-                                            PinnedPrincipalBroadcastBanner(notice = data.pinnedBroadcast)
-                                        }
+                                        item { PinnedPrincipalBroadcastBanner(notice = data.pinnedBroadcast) }
                                     }
-
-                                    // Active Holiday Banner
                                     if (data.todayHoliday != null) {
-                                        item {
-                                            ActiveHolidayBanner(holiday = data.todayHoliday)
-                                        }
+                                        item { ActiveHolidayBanner(holiday = data.todayHoliday) }
                                     }
-
-                                    // Attendance Finalization Banner
                                     item {
                                         AttendanceFinalizationBanner(
                                             attendanceClosed = data.attendanceClosed,
@@ -460,471 +401,334 @@ fun TraineeDashboardScreen(
                                             closedAt = data.closedAt
                                         )
                                     }
-
-                                    // 1. Today's Status Card
                                     item {
-                                        TodayStatusCard(
+                                        TraineeTodayStatusCard(
                                             attendance = data.attendance,
                                             isHolidayToday = data.todayHoliday != null
                                         )
                                     }
-
-                                    // 1b. Today's Timetable Live/Upcoming Strip
                                     item {
-                                        TodayTimetableQuickStrip(
-                                            periods = uiState.traineeCustomTimetable
-                                                ?: data.timetable.ifEmpty { uiState.officialTimetableCache },
-                                            hasCustomEdits = uiState.traineeCustomTimetable != null,
-                                            onOpenTimetableTab = { onTabSelected(TraineeTab.TIMETABLE) }
-                                        )
+                                        TraineeAttendanceRingCard(attendance = data.attendance)
                                     }
-
-                                    // 2. Attendance Percentage Ring & Breakdown Card (0..100% clamped)
-                                    item {
-                                        AttendancePercentageCard(attendance = data.attendance)
+                                    if (data.myShopFloorEntry != null) {
+                                        item {
+                                            Surface(
+                                                shape = RoundedCornerShape(16.dp),
+                                                color = colors.amberContainer,
+                                                border = BorderStroke(1.5.dp, colors.amberAccent.copy(alpha = 0.6f)),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Icon(Icons.Rounded.Build, contentDescription = null, tint = colors.amberAccent, modifier = Modifier.size(18.dp))
+                                                        Text("Post-3PM Shop Floor Assigned", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = colors.amberAccent)
+                                                    }
+                                                    Text(
+                                                        text = "${data.myShopFloorEntry.assignedReason} • End: ${data.myShopFloorEntry.scheduledEndTime} • Status: ${data.myShopFloorEntry.status}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
-
-                                    // 2b. Personal 80% Safe-Zone Calculator & Streak Badge
-                                    item {
-                                        TraineeSafeZoneAndStreakCard(attendance = data.attendance)
-                                    }
-
-                                    // 2c. My Mon–Fri Duty Turn & Live Shop Floor Status Badge
-                                    item {
-                                        TraineeDutyAndShopFloorCard(
-                                            myRollNumber = (data.roll).toIntOrNull(),
-                                            customDutyItems = data.dutyItems,
-                                            dutyOverrides = data.dutyOverrides,
-                                            myShopFloorEntry = data.myShopFloorEntry,
-                                            scanOverrides = data.scanOverrides,
-                                            onOpenDutyTab = { onTabSelected(TraineeTab.DUTY_CHART) }
-                                        )
-                                    }
-
-                                    // 2d. Trainee "Running Late" Alert to Trade Instructor
                                     item {
                                         TraineeRunningLateCard(
-                                            roll = data.roll,
-                                            studentName = data.name,
-                                            recentAlerts = data.myRunningLateAlerts,
                                             isSubmitting = uiState.isSubmittingRunningLate,
                                             successMessage = uiState.runningLateMessage,
                                             errorMessage = uiState.runningLateError,
-                                            onSubmitRunningLate = onSubmitRunningLate,
-                                            onDismissFeedback = onDismissRunningLateFeedback
+                                            onSubmitRunningLate = { eta, cat, details, reset ->
+                                                onDismissRunningLateFeedback()
+                                                onSubmitRunningLate(eta, cat, details, reset)
+                                            }
                                         )
-                                    }
-
-                                    // 3. Apply for Out-Pass / Half-Day Leave Card
-                                    item {
-                                        Surface(
-                                            shape = RoundedCornerShape(20.dp),
-                                            color = colors.cardSurface,
-                                            border = BorderStroke(1.dp, colors.borderSubtle),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(
-                                                modifier = Modifier.padding(18.dp),
-                                                verticalArrangement = Arrangement.spacedBy(14.dp)
-                                            ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(36.dp)
-                                                            .clip(CircleShape)
-                                                            .background(colors.skyContainer),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Rounded.EventNote,
-                                                            contentDescription = null,
-                                                            tint = colors.skyAccent,
-                                                            modifier = Modifier.size(20.dp)
-                                                        )
-                                                    }
-                                                    Column {
-                                                        Text(
-                                                            text = "Apply for Out-Pass / Half-Day Leave",
-                                                            style = MaterialTheme.typography.titleMedium,
-                                                            color = MaterialTheme.colorScheme.onSurface
-                                                        )
-                                                        Text(
-                                                            text = "Digitally signed workflow via Instructor & Principal",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = colors.textMuted
-                                                        )
-                                                    }
-                                                }
-
-                                                ExposedDropdownMenuBox(
-                                                    expanded = typeMenuExpanded,
-                                                    onExpandedChange = { typeMenuExpanded = !typeMenuExpanded }
-                                                ) {
-                                                    OutlinedTextField(
-                                                        value = selectedType,
-                                                        onValueChange = {},
-                                                        readOnly = true,
-                                                        label = { Text("Request Type") },
-                                                        trailingIcon = {
-                                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeMenuExpanded)
-                                                        },
-                                                        shape = RoundedCornerShape(12.dp),
-                                                        colors = OutlinedTextFieldDefaults.colors(
-                                                            focusedBorderColor = colors.skyAccent,
-                                                            unfocusedBorderColor = colors.borderSubtle,
-                                                            focusedContainerColor = MaterialTheme.colorScheme.background,
-                                                            unfocusedContainerColor = MaterialTheme.colorScheme.background
-                                                        ),
-                                                        modifier = Modifier
-                                                            .menuAnchor()
-                                                            .fillMaxWidth()
-                                                            .testTag("leave_type_dropdown")
-                                                    )
-                                                    ExposedDropdownMenu(
-                                                        expanded = typeMenuExpanded,
-                                                        onDismissRequest = { typeMenuExpanded = false },
-                                                        modifier = Modifier.background(colors.cardElevated)
-                                                    ) {
-                                                        LEAVE_TYPES.forEach { option ->
-                                                            DropdownMenuItem(
-                                                                text = { Text(option, color = MaterialTheme.colorScheme.onSurface) },
-                                                                onClick = {
-                                                                    selectedType = option
-                                                                    if (option == "Half-Day Leave" && timeWindow == "11:00 AM - 12:00 PM") {
-                                                                        timeWindow = "Afternoon Session"
-                                                                    } else if (option == "1-Hour Permission" && timeWindow == "Afternoon Session") {
-                                                                        timeWindow = "11:00 AM - 12:00 PM"
-                                                                    }
-                                                                    typeMenuExpanded = false
-                                                                }
-                                                            )
-                                                        }
-                                                    }
-                                                }
-
-                                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        items(QUICK_TIME_WINDOWS) { preset ->
-                                                            FilterChip(
-                                                                selected = timeWindow == preset,
-                                                                onClick = { timeWindow = preset },
-                                                                label = {
-                                                                    Text(
-                                                                        text = preset,
-                                                                        style = MaterialTheme.typography.labelSmall
-                                                                    )
-                                                                },
-                                                                colors = FilterChipDefaults.filterChipColors(
-                                                                    selectedContainerColor = colors.skyContainer,
-                                                                    selectedLabelColor = colors.skyAccent,
-                                                                    containerColor = MaterialTheme.colorScheme.background,
-                                                                    labelColor = colors.textMuted
-                                                                ),
-                                                                border = FilterChipDefaults.filterChipBorder(
-                                                                    enabled = true,
-                                                                    selected = timeWindow == preset,
-                                                                    borderColor = colors.borderSubtle,
-                                                                    selectedBorderColor = colors.skyAccent
-                                                                )
-                                                            )
-                                                        }
-                                                    }
-
-                                                    OutlinedTextField(
-                                                        value = timeWindow,
-                                                        onValueChange = { timeWindow = it },
-                                                        label = { Text("Time Window") },
-                                                        placeholder = { Text("e.g., 11:00 AM - 12:00 PM or Afternoon Session") },
-                                                        leadingIcon = {
-                                                            Icon(
-                                                                imageVector = Icons.Rounded.AccessTime,
-                                                                contentDescription = null,
-                                                                tint = colors.skyAccent
-                                                            )
-                                                        },
-                                                        singleLine = true,
-                                                        shape = RoundedCornerShape(12.dp),
-                                                        colors = OutlinedTextFieldDefaults.colors(
-                                                            focusedBorderColor = colors.skyAccent,
-                                                            unfocusedBorderColor = colors.borderSubtle,
-                                                            focusedContainerColor = MaterialTheme.colorScheme.background,
-                                                            unfocusedContainerColor = MaterialTheme.colorScheme.background
-                                                        ),
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .testTag("leave_time_window_input")
-                                                    )
-                                                }
-
-                                                OutlinedTextField(
-                                                    value = reason,
-                                                    onValueChange = { reason = it },
-                                                    label = { Text("Reason") },
-                                                    placeholder = { Text("Enter valid reason for permission / leave") },
-                                                    minLines = 2,
-                                                    maxLines = 4,
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    colors = OutlinedTextFieldDefaults.colors(
-                                                        focusedBorderColor = colors.skyAccent,
-                                                        unfocusedBorderColor = colors.borderSubtle,
-                                                        focusedContainerColor = MaterialTheme.colorScheme.background,
-                                                        unfocusedContainerColor = MaterialTheme.colorScheme.background
-                                                    ),
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .testTag("leave_reason_input")
-                                                )
-
-                                                DigitalSignaturePad(
-                                                    defaultSignerName = data.name,
-                                                    resetKey = sigResetKey,
-                                                    onSignatureChanged = { signature = it },
-                                                    title = "Trainee Digital Signature",
-                                                    tagPrefix = "trainee_sig"
-                                                )
-
-                                                AnimatedVisibility(visible = uiState.leaveSubmitMessage != null) {
-                                                    Surface(
-                                                        shape = RoundedCornerShape(12.dp),
-                                                        color = colors.emeraldContainer,
-                                                        border = BorderStroke(1.dp, colors.emeraldAccent.copy(alpha = 0.6f)),
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .testTag("leave_submit_success_banner")
-                                                    ) {
-                                                        Row(
-                                                            modifier = Modifier.padding(12.dp),
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.SpaceBetween
-                                                        ) {
-                                                            Row(
-                                                                modifier = Modifier.weight(1f),
-                                                                verticalAlignment = Alignment.CenterVertically,
-                                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = Icons.Rounded.CheckCircle,
-                                                                    contentDescription = null,
-                                                                    tint = colors.emeraldAccent
-                                                                )
-                                                                Column {
-                                                                    if (!uiState.leaveSubmitReqId.isNullOrBlank()) {
-                                                                        Text(
-                                                                            text = "Request ID: ${uiState.leaveSubmitReqId}",
-                                                                            style = MaterialTheme.typography.labelLarge.copy(
-                                                                                fontFamily = JetBrainsMonoFamily,
-                                                                                fontWeight = FontWeight.Bold
-                                                                            ),
-                                                                            color = colors.emeraldAccent
-                                                                        )
-                                                                    }
-                                                                    Text(
-                                                                        text = uiState.leaveSubmitMessage.orEmpty(),
-                                                                        style = MaterialTheme.typography.bodySmall,
-                                                                        color = MaterialTheme.colorScheme.onSurface
-                                                                    )
-                                                                }
-                                                            }
-                                                            IconButton(onClick = onDismissFeedback) {
-                                                                Icon(
-                                                                    imageVector = Icons.Rounded.Close,
-                                                                    contentDescription = "Dismiss",
-                                                                    tint = colors.textMuted,
-                                                                    modifier = Modifier.size(18.dp)
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                AnimatedVisibility(visible = uiState.leaveSubmitError != null) {
-                                                    InlineAlertCard(
-                                                        message = uiState.leaveSubmitError.orEmpty(),
-                                                        isError = true
-                                                    )
-                                                }
-
-                                                Button(
-                                                    onClick = {
-                                                        onSubmitLeave(selectedType, timeWindow, reason, signature) {
-                                                            reason = ""
-                                                            signature = ""
-                                                            sigResetKey++
-                                                        }
-                                                    },
-                                                    enabled = !uiState.isSubmittingLeave,
-                                                    shape = RoundedCornerShape(14.dp),
-                                                    colors = ButtonDefaults.buttonColors(
-                                                        containerColor = colors.emeraldAccent,
-                                                        contentColor = MaterialTheme.colorScheme.onSecondary
-                                                    ),
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .height(52.dp)
-                                                        .testTag("submit_leave_button")
-                                                ) {
-                                                    if (uiState.isSubmittingLeave) {
-                                                        CircularProgressIndicator(
-                                                            color = MaterialTheme.colorScheme.onSecondary,
-                                                            strokeWidth = 2.5.dp,
-                                                            modifier = Modifier.size(20.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(10.dp))
-                                                        Text("Submitting Request...")
-                                                    } else {
-                                                        Icon(
-                                                            imageVector = Icons.AutoMirrored.Rounded.Send,
-                                                            contentDescription = null,
-                                                            modifier = Modifier.size(18.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                        Text(
-                                                            text = "Submit Signed Out-Pass Request",
-                                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // 4. My Leave & Pass History
-                                    item {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = "My Leave & Pass History",
-                                                style = MaterialTheme.typography.titleLarge,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = "${data.leaves.size} record(s)",
-                                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = JetBrainsMonoFamily),
-                                                color = colors.textMuted
-                                            )
-                                        }
-                                    }
-
-                                    if (data.leaves.isEmpty()) {
-                                        item {
-                                            Surface(
-                                                shape = RoundedCornerShape(18.dp),
-                                                color = colors.cardSurface,
-                                                border = BorderStroke(1.dp, colors.borderSubtle),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Column(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(28.dp),
-                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Description,
-                                                        contentDescription = null,
-                                                        tint = colors.textMuted,
-                                                        modifier = Modifier.size(36.dp)
-                                                    )
-                                                    Text(
-                                                        text = "No Out-Pass or Leave Requests Yet",
-                                                        style = MaterialTheme.typography.titleSmall,
-                                                        color = MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                    Text(
-                                                        text = "Submitted requests and approved signed PDFs will appear here.",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = colors.textMuted
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        items(
-                                            data.leaves,
-                                            key = { it.id.ifBlank { "${it.date}_${it.type}_${it.hashCode()}" } }
-                                        ) { item ->
-                                            TraineeLeaveHistoryCard(
-                                                item = item,
-                                                onOpenPdf = { url -> ExternalUrlHelper.openUrl(context, url) }
-                                            )
-                                        }
                                     }
                                 }
                             }
                         }
 
-                        TraineeTab.TIMETABLE -> TraineeTimetableTab(
-                            officialPeriods = data?.timetable?.ifEmpty { uiState.officialTimetableCache }
-                                ?: uiState.officialTimetableCache,
-                            customPeriods = uiState.traineeCustomTimetable,
-                            allowSharedTraineeEdit = data?.traineeTimetableEditEnabled ?: false,
-                            isSaving = uiState.isSavingTimetable,
-                            feedbackMessage = uiState.timetableFeedbackMessage,
-                            errorMessage = uiState.timetableError,
-                            onSaveLocalEdits = onSaveLocalTimetable,
-                            onResetToOfficial = onResetTimetableToOfficial,
-                            onSubmitSharedEdits = onSubmitSharedTimetable,
-                            onDismissFeedback = onDismissTimetableFeedback,
-                            modifier = Modifier.widthIn(max = 640.dp)
-                        )
+                        TraineeTab.OUT_PASS -> {
+                            LazyColumn(
+                                modifier = Modifier.widthIn(max = 640.dp).fillMaxSize().testTag("trainee_outpass_tab"),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                item {
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = colors.cardSurface,
+                                        border = BorderStroke(1.dp, colors.borderSubtle),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Icon(Icons.Rounded.EventNote, contentDescription = null, tint = colors.skyAccent)
+                                                Text("Apply for Out-Pass / Half-Day Leave", style = MaterialTheme.typography.titleMedium)
+                                            }
 
-                        TraineeTab.MARKS -> TraineeMarksAndQueriesTab(
+                                            ExposedDropdownMenuBox(expanded = typeMenuExpanded, onExpandedChange = { typeMenuExpanded = !typeMenuExpanded }) {
+                                                OutlinedTextField(
+                                                    value = selectedType,
+                                                    onValueChange = {},
+                                                    readOnly = true,
+                                                    label = { Text("Request Type") },
+                                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeMenuExpanded) },
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    modifier = Modifier.menuAnchor().fillMaxWidth().testTag("leave_type_dropdown")
+                                                )
+                                                ExposedDropdownMenu(expanded = typeMenuExpanded, onDismissRequest = { typeMenuExpanded = false }) {
+                                                    LEAVE_TYPES.forEach { option ->
+                                                        DropdownMenuItem(text = { Text(option) }, onClick = { selectedType = option; typeMenuExpanded = false })
+                                                    }
+                                                }
+                                            }
+
+                                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                items(QUICK_TIME_WINDOWS) { preset ->
+                                                    FilterChip(selected = timeWindow == preset, onClick = { timeWindow = preset }, label = { Text(preset, style = MaterialTheme.typography.labelSmall) })
+                                                }
+                                            }
+
+                                            OutlinedTextField(
+                                                value = timeWindow,
+                                                onValueChange = { timeWindow = it },
+                                                label = { Text("Time Window") },
+                                                leadingIcon = { Icon(Icons.Rounded.AccessTime, contentDescription = null, tint = colors.skyAccent) },
+                                                singleLine = true,
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth().testTag("leave_time_window_input")
+                                            )
+
+                                            OutlinedTextField(
+                                                value = reason,
+                                                onValueChange = { reason = it },
+                                                label = { Text("Reason") },
+                                                minLines = 2,
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth().testTag("leave_reason_input")
+                                            )
+
+                                            DigitalSignaturePad(
+                                                defaultSignerName = data?.name ?: "Trainee",
+                                                resetKey = sigResetKey,
+                                                onSignatureChanged = { signature = it },
+                                                title = "Trainee Digital Signature",
+                                                tagPrefix = "trainee_sig"
+                                            )
+
+                                            AnimatedVisibility(visible = uiState.leaveSubmitMessage != null) {
+                                                InlineAlertCard(uiState.leaveSubmitMessage.orEmpty(), isError = false)
+                                            }
+                                            AnimatedVisibility(visible = uiState.leaveSubmitError != null) {
+                                                InlineAlertCard(uiState.leaveSubmitError.orEmpty(), isError = true)
+                                            }
+
+                                            Button(
+                                                onClick = {
+                                                    onDismissFeedback()
+                                                    onSubmitLeave(selectedType, timeWindow, reason, signature) {
+                                                        reason = ""
+                                                        signature = ""
+                                                        sigResetKey++
+                                                    }
+                                                },
+                                                enabled = !uiState.isSubmittingLeave && reason.isNotBlank() && signature.isNotBlank(),
+                                                shape = RoundedCornerShape(14.dp),
+                                                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("submit_leave_button")
+                                            ) {
+                                                if (uiState.isSubmittingLeave) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                                } else {
+                                                    Text("Submit Signed Out-Pass Request", fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                val leaves = data?.leaves.orEmpty()
+                                item {
+                                    Text("Out-Pass & Leave History (${leaves.size})", style = MaterialTheme.typography.titleMedium)
+                                }
+                                items(leaves, key = { "tr_lv_${it.id}_${it.date}" }) { leave ->
+                                    TraineeLeaveHistoryCard(leave = leave)
+                                }
+                            }
+                        }
+
+                        TraineeTab.MARKS -> TraineeMarksTab(
                             uiState = uiState,
                             onSubmitWorkMarkQuery = onSubmitWorkMarkQuery,
-                            onDismissWorkQueryFeedback = onDismissWorkQueryFeedback,
-                            modifier = Modifier.widthIn(max = 640.dp)
+                            onDismissWorkQueryFeedback = onDismissWorkQueryFeedback
                         )
 
-                        TraineeTab.ACADEMIC_RECORDS -> TraineeAcademicSubmissionsTab(
+                        TraineeTab.ACADEMICS -> TraineeAcademicsTab(
                             uiState = uiState,
-                            onSubmitRecord = onSubmitAcademicRecord,
-                            onRefreshSubmissions = onRefreshAcademicSubmission,
-                            onDismissFeedback = onDismissAcademicFeedback,
-                            modifier = Modifier.widthIn(max = 640.dp)
+                            onSubmitAcademicRecord = onSubmitAcademicRecord,
+                            onRefreshAcademicSubmission = onRefreshAcademicSubmission,
+                            onDismissAcademicFeedback = onDismissAcademicFeedback,
+                            onSaveLocalTimetable = onSaveLocalTimetable,
+                            onResetTimetableToOfficial = onResetTimetableToOfficial,
+                            onSubmitSharedTimetable = onSubmitSharedTimetable,
+                            onDismissTimetableFeedback = onDismissTimetableFeedback,
+                            onSaveProjectGroup = onSaveProjectGroup,
+                            onRefreshProjectGroups = onRefreshProjectGroups,
+                            onDismissProjectFeedback = onDismissProjectFeedback
                         )
 
-                        TraineeTab.NOTICES -> NoticesScreen(
-                            notices = data?.notices.orEmpty(),
-                            todayHoliday = data?.todayHoliday,
-                            lastSeenNoticeId = uiState.lastSeenNoticeId,
-                            onRefresh = onRefresh,
-                            techNewsItems = uiState.techNewsItems,
-                            isLoadingTechNews = uiState.isLoadingTechNews,
-                            techNewsError = uiState.techNewsError,
+                        TraineeTab.NOTICES -> TraineeNoticesAndNewsTab(
+                            uiState = uiState,
                             onRefreshTechNews = onRefreshTechNews,
-                            modifier = Modifier.widthIn(max = 640.dp)
-                        )
-
-                        TraineeTab.DUTY_CHART -> DutyChartTab(
-                            myRollNumber = (data?.roll ?: uiState.activeRoll).toIntOrNull(),
-                            customDutyItems = data?.dutyItems.orEmpty(),
-                            dutyOverrides = data?.dutyOverrides.orEmpty(),
-                            modifier = Modifier.widthIn(max = 640.dp)
-                        )
-
-                        TraineeTab.PROJECT_GROUPS -> ProjectGroupsTab(
-                            myRollNumber = (data?.roll ?: uiState.activeRoll).toIntOrNull(),
-                            myName = data?.name.orEmpty(),
-                            isEnabled = data?.projectGroupsEnabled ?: false,
-                            groups = data?.projectGroups.orEmpty(),
-                            isSaving = uiState.isSavingProjectGroup,
-                            saveSuccessMessage = uiState.projectGroupSaveMessage,
-                            saveErrorMessage = uiState.projectGroupSaveError,
-                            onSaveGroup = onSaveProjectGroup,
-                            onRefreshGroups = onRefreshProjectGroups,
-                            onDismissFeedback = onDismissProjectFeedback,
-                            modifier = Modifier.widthIn(max = 640.dp)
+                            onSelectNewsLanguage = onSelectNewsLanguage
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TraineeTodayStatusCard(
+    attendance: AttendanceSummary,
+    isHolidayToday: Boolean
+) {
+    val colors = LocalItiColors.current
+    val effectiveStatus = if (isHolidayToday) "HOLIDAY" else attendance.todayStatus
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = colors.cardSurface,
+        border = BorderStroke(1.dp, colors.borderSubtle),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Today's RF Attendance", style = MaterialTheme.typography.titleMedium)
+                AttendanceStatusPill(status = effectiveStatus)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.background, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("MORNING IN", style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.textMuted)
+                        Text(IstDateTimeFormatter.formatTimeOnly(attendance.inT), style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = colors.emeraldAccent)
+                    }
+                }
+                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.background, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("AFTERNOON OUT", style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.textMuted)
+                        Text(IstDateTimeFormatter.formatTimeOnly(attendance.outT), style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = colors.amberAccent)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TraineeAttendanceRingCard(attendance: AttendanceSummary) {
+    val colors = LocalItiColors.current
+    val clamped = attendance.pct.coerceIn(0, 100)
+    val sweep by animateFloatAsState(targetValue = (clamped / 100f) * 360f, animationSpec = tween(750), label = "tr_ring")
+    val ringColors = when {
+        clamped >= 80 -> listOf(colors.skyAccent, colors.emeraldAccent)
+        clamped >= 75 -> listOf(colors.amberAccent, colors.skyAccent)
+        else -> listOf(colors.redAccent, colors.amberAccent)
+    }
+    val needed = AttendanceMath.sessionsNeededForTargetPct(attendance.present, attendance.half, attendance.total)
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = colors.cardSurface,
+        border = BorderStroke(1.dp, colors.borderSubtle),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(96.dp)) {
+                val track = colors.borderSubtle
+                Canvas(modifier = Modifier.fillMaxSize().padding(5.dp)) {
+                    drawArc(color = track, startAngle = -90f, sweepAngle = 360f, useCenter = false, style = Stroke(10.dp.toPx(), cap = StrokeCap.Round))
+                    drawArc(brush = Brush.sweepGradient(ringColors), startAngle = -90f, sweepAngle = sweep, useCenter = false, style = Stroke(10.dp.toPx(), cap = StrokeCap.Round))
+                }
+                Text("$clamped%", style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold))
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Overall Attendance & DGT Safe-Zone", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                Text("Present: ${attendance.present} • Half: ${attendance.half} • Total: ${attendance.total}", style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.textMuted)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Rounded.LocalFireDepartment, contentDescription = null, tint = colors.amberAccent, modifier = Modifier.size(16.dp))
+                    Text("${attendance.streakDays}-day streak • ${if (needed == 0) "DGT Safe (>=80%)" else "Need $needed more full day(s) for 80%"}", style = MaterialTheme.typography.labelSmall, color = if (needed == 0) colors.emeraldAccent else colors.amberAccent)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TraineeRunningLateCard(
+    isSubmitting: Boolean,
+    successMessage: String?,
+    errorMessage: String?,
+    onSubmitRunningLate: (expectedArrival: String, reasonCategory: String, details: String, onReset: () -> Unit) -> Unit
+) {
+    val colors = LocalItiColors.current
+    var eta by remember { mutableStateOf("09:30 AM") }
+    var category by remember { mutableStateOf("Bus Delay") }
+    var details by remember { mutableStateOf("") }
+
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = colors.cardSurface,
+        border = BorderStroke(1.dp, colors.borderSubtle),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.DirectionsBus, contentDescription = null, tint = colors.amberAccent, modifier = Modifier.size(18.dp))
+                Text("Running Late? Alert Instructor", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = eta, onValueChange = { eta = it }, label = { Text("Expected Arrival") }, singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Reason") }, singleLine = true, modifier = Modifier.weight(1f))
+            }
+            OutlinedTextField(value = details, onValueChange = { details = it }, label = { Text("Optional Note") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            if (successMessage != null) InlineAlertCard(successMessage, false)
+            if (errorMessage != null) InlineAlertCard(errorMessage, true)
+            Button(
+                onClick = { onSubmitRunningLate(eta, category, details) { details = "" } },
+                enabled = !isSubmitting && eta.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.amberAccent, contentColor = MaterialTheme.colorScheme.onTertiary),
+                modifier = Modifier.fillMaxWidth().testTag("trainee_running_late_button")
+            ) {
+                Text("Send Running Late Alert", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TraineeLeaveHistoryCard(leave: TraineeLeaveItem) {
+    val colors = LocalItiColors.current
+    val context = LocalContext.current
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colors.cardSurface,
+        border = BorderStroke(1.dp, colors.borderSubtle),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("${leave.type} • ${leave.date}", style = MaterialTheme.typography.titleSmall)
+                LeaveStatusBadge(status = leave.status)
+            }
+            if (leave.pdf.isNotBlank()) {
+                OutlinedButton(onClick = { ExternalUrlHelper.openUrl(context, leave.pdf) }) {
+                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("PDF", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -935,702 +739,21 @@ fun TraineeDashboardScreen(
 private fun TraineeTabIcon(
     tab: TraineeTab,
     selected: Boolean,
-    unreadNotices: Int,
-    projectsLocked: Boolean
+    unreadNotices: Int
 ) {
     val colors = LocalItiColors.current
     val icon: ImageVector = when (tab) {
         TraineeTab.HOME -> if (selected) Icons.Rounded.Home else Icons.Outlined.Home
-        TraineeTab.TIMETABLE -> if (selected) Icons.Rounded.CalendarViewWeek else Icons.Outlined.CalendarViewWeek
+        TraineeTab.OUT_PASS -> if (selected) Icons.Rounded.EventRepeat else Icons.Outlined.EventRepeat
         TraineeTab.MARKS -> if (selected) Icons.Rounded.Grade else Icons.Outlined.Grade
-        TraineeTab.ACADEMIC_RECORDS -> if (selected) Icons.AutoMirrored.Rounded.MenuBook else Icons.AutoMirrored.Outlined.MenuBook
+        TraineeTab.ACADEMICS -> if (selected) Icons.AutoMirrored.Rounded.MenuBook else Icons.AutoMirrored.Outlined.MenuBook
         TraineeTab.NOTICES -> if (selected) Icons.Rounded.Campaign else Icons.Outlined.Campaign
-        TraineeTab.DUTY_CHART -> if (selected) Icons.Rounded.EventRepeat else Icons.Outlined.EventRepeat
-        TraineeTab.PROJECT_GROUPS -> if (projectsLocked) {
-            if (selected) Icons.Rounded.Lock else Icons.Outlined.Lock
-        } else {
-            if (selected) Icons.Rounded.Workspaces else Icons.Outlined.Workspaces
-        }
     }
-
     if (tab == TraineeTab.NOTICES && unreadNotices > 0) {
-        BadgedBox(
-            badge = {
-                Badge(
-                    containerColor = colors.redAccent,
-                    contentColor = MaterialTheme.colorScheme.onError
-                ) {
-                    Text(unreadNotices.toString())
-                }
-            }
-        ) {
-            Icon(imageVector = icon, contentDescription = tab.label, modifier = Modifier.size(22.dp))
+        BadgedBox(badge = { Badge(containerColor = colors.redAccent) { Text(unreadNotices.toString()) } }) {
+            Icon(icon, contentDescription = tab.label, modifier = Modifier.size(22.dp))
         }
     } else {
-        Icon(imageVector = icon, contentDescription = tab.label, modifier = Modifier.size(22.dp))
-    }
-}
-
-@Composable
-private fun TodayStatusCard(
-    attendance: AttendanceSummary,
-    isHolidayToday: Boolean
-) {
-    val colors = LocalItiColors.current
-    val statusToShow = if (isHolidayToday) "HOLIDAY" else attendance.todayStatus
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = colors.cardSurface,
-        border = BorderStroke(1.dp, colors.borderSubtle),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("today_status_card")
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "Today's Status",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = stringResource(R.string.esp_badge_live),
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                        color = colors.emeraldAccent
-                    )
-                }
-                AttendanceStatusPill(status = statusToShow)
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                EspTimeTile(
-                    label = "ESP IN TIME",
-                    timeValue = IstDateTimeFormatter.formatTimeOnly(attendance.inT),
-                    accentColor = colors.emeraldAccent,
-                    modifier = Modifier.weight(1f)
-                )
-                EspTimeTile(
-                    label = "ESP OUT TIME",
-                    timeValue = IstDateTimeFormatter.formatTimeOnly(attendance.outT),
-                    accentColor = colors.amberAccent,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EspTimeTile(
-    label: String,
-    timeValue: String,
-    accentColor: Color,
-    modifier: Modifier = Modifier
-) {
-    val colors = LocalItiColors.current
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.background,
-        border = BorderStroke(1.dp, colors.borderSubtle),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Sensors,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                    color = colors.textMuted
-                )
-            }
-            Text(
-                text = timeValue.ifBlank { "-" },
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontFamily = JetBrainsMonoFamily,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-}
-
-@Composable
-private fun AttendancePercentageCard(attendance: AttendanceSummary) {
-    val colors = LocalItiColors.current
-    val pctClamped = attendance.pct.coerceIn(0, 100)
-    val animatedSweep by animateFloatAsState(
-        targetValue = (pctClamped / 100f) * 360f,
-        animationSpec = tween(durationMillis = 850),
-        label = "attendance_ring_sweep"
-    )
-
-    val ringColors = when {
-        pctClamped >= 80 -> listOf(colors.skyAccent, colors.emeraldAccent)
-        pctClamped >= 75 -> listOf(colors.amberAccent, colors.skyAccent)
-        else -> listOf(colors.redAccent, colors.amberAccent)
-    }
-
-    val statusHint = when {
-        pctClamped >= 80 -> "On Track (DGT >= 80% Eligibility)"
-        pctClamped >= 75 -> "Borderline — Maintain Daily Swipes"
-        else -> "Below 75% — Attention Required"
-    }
-
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = colors.cardSurface,
-        border = BorderStroke(1.dp, colors.borderSubtle),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("attendance_percentage_card")
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(116.dp)
-                ) {
-                    val trackColor = colors.borderSubtle
-                    Canvas(modifier = Modifier.fillMaxSize().padding(6.dp)) {
-                        drawArc(
-                            color = trackColor,
-                            startAngle = -90f,
-                            sweepAngle = 360f,
-                            useCenter = false,
-                            style = Stroke(width = 11.dp.toPx(), cap = StrokeCap.Round)
-                        )
-                        drawArc(
-                            brush = Brush.sweepGradient(colors = ringColors),
-                            startAngle = -90f,
-                            sweepAngle = animatedSweep,
-                            useCenter = false,
-                            style = Stroke(width = 11.dp.toPx(), cap = StrokeCap.Round)
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "${pctClamped}%",
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontFamily = JetBrainsMonoFamily,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "OVERALL",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
-                            color = colors.textMuted
-                        )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "Attendance Summary",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = statusHint,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (pctClamped >= 80) colors.emeraldAccent else if (pctClamped >= 75) colors.amberAccent else colors.redAccent
-                    )
-                    LinearProgressIndicator(
-                        progress = { pctClamped / 100f },
-                        color = ringColors.first(),
-                        trackColor = colors.borderSubtle,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(7.dp)
-                            .clip(RoundedCornerShape(50))
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                MetricCounterTile(
-                    label = "Present",
-                    value = attendance.present.toString(),
-                    accent = colors.emeraldAccent,
-                    modifier = Modifier.weight(1f)
-                )
-                MetricCounterTile(
-                    label = "Half-Day",
-                    value = attendance.half.toString(),
-                    accent = colors.amberAccent,
-                    modifier = Modifier.weight(1f)
-                )
-                MetricCounterTile(
-                    label = "Total Days",
-                    value = attendance.total.toString(),
-                    accent = colors.skyAccent,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MetricCounterTile(
-    label: String,
-    value: String,
-    accent: Color,
-    modifier: Modifier = Modifier
-) {
-    val colors = LocalItiColors.current
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.background,
-        border = BorderStroke(1.dp, colors.borderSubtle),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 12.dp, horizontal = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontFamily = JetBrainsMonoFamily,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = accent
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.textMuted,
-                maxLines = 1
-            )
-        }
-    }
-}
-
-@Composable
-private fun TraineeLeaveHistoryCard(
-    item: TraineeLeaveItem,
-    onOpenPdf: (String) -> Unit
-) {
-    val colors = LocalItiColors.current
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = colors.cardSurface,
-        border = BorderStroke(1.dp, colors.borderSubtle),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("leave_history_card_${item.id}")
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = item.id.ifBlank { "REQ" },
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontFamily = JetBrainsMonoFamily,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = colors.skyAccent
-                )
-                LeaveStatusBadge(status = item.status)
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = item.type,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = item.date,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
-                    color = colors.textMuted
-                )
-            }
-
-            if (item.pdf.isNotBlank()) {
-                Button(
-                    onClick = { onOpenPdf(item.pdf) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.emeraldContainer,
-                        contentColor = colors.emeraldAccent
-                    ),
-                    border = BorderStroke(1.dp, colors.emeraldAccent.copy(alpha = 0.55f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("view_pdf_button_${item.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PictureAsPdf,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "View Signed PDF",
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun InlineAlertCard(
-    message: String,
-    isError: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val colors = LocalItiColors.current
-    val bg = if (isError) colors.redContainer else colors.emeraldContainer
-    val fg = if (isError) colors.redAccent else colors.emeraldAccent
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = bg,
-        border = BorderStroke(1.dp, fg.copy(alpha = 0.5f)),
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Icon(
-                imageVector = if (isError) Icons.Rounded.ErrorOutline else Icons.Rounded.CheckCircle,
-                contentDescription = null,
-                tint = fg,
-                modifier = Modifier.size(20.dp)
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = fg
-            )
-        }
-    }
-}
-private fun readTraineeField(obj: Any, vararg getterNames: String): String {
-    for (name in getterNames) {
-        val value = runCatching { obj.javaClass.getMethod(name).invoke(obj)?.toString() }.getOrNull()
-        if (!value.isNullOrBlank()) return value
-    }
-    return ""
-}
-
-private fun readTraineeListProp(obj: Any?, vararg getterNames: String): List<Any> {
-    if (obj == null) return emptyList()
-    for (name in getterNames) {
-        val list = runCatching { obj.javaClass.getMethod(name).invoke(obj) as? List<*> }
-            .getOrNull()
-            ?.filterNotNull()
-        if (list != null) return list
-    }
-    return emptyList()
-}
-
-@Composable
-private fun TraineeMarksAndQueriesTab(
-    uiState: AppUiState,
-    onSubmitWorkMarkQuery: (
-        monthLabel: String,
-        workReference: String,
-        currentMarkNote: String,
-        traineeNote: String,
-        onSuccessReset: () -> Unit
-    ) -> Unit,
-    onDismissWorkQueryFeedback: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val colors = LocalItiColors.current
-    val marks = remember(uiState.traineeData) {
-        readTraineeListProp(uiState.traineeData, "getMonthlyMarks", "getMyMonthlyMarks", "getExamMarks")
-    }
-    val queries = remember(uiState.traineeData) {
-        readTraineeListProp(uiState.traineeData, "getWorkMarkQueries", "getMyWorkMarkQueries", "getMarkQueries")
-    }
-
-    var monthLabel by remember { mutableStateOf("Nov 2026") }
-    var workReference by remember { mutableStateOf("") }
-    var currentMarkNote by remember { mutableStateOf("") }
-    var traineeNote by remember { mutableStateOf("") }
-
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("trainee_marks_queries_tab"),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = colors.cardSurface,
-                border = BorderStroke(1.dp, colors.borderSubtle),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "Monthly Theory & Lab Marks",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (marks.isEmpty()) {
-                        Text(
-                            text = "No monthly theory or lab exam marks published yet.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textMuted
-                        )
-                    } else {
-                        marks.forEach { item ->
-                            val month = readTraineeField(item, "getMonthLabel", "getMonth", "getExamMonth").ifBlank { "Monthly Exam" }
-                            val examDate = readTraineeField(item, "getExamDate", "getDate")
-                            val theory = readTraineeField(item, "getTheoryMarks", "getTheory").ifBlank { "-" }
-                            val theoryMax = readTraineeField(item, "getTheoryMax").ifBlank { "50" }
-                            val lab = readTraineeField(item, "getLabMarks", "getLab", "getPracticalMarks").ifBlank { "-" }
-                            val labMax = readTraineeField(item, "getLabMax").ifBlank { "100" }
-                            val remarks = readTraineeField(item, "getRemarks", "getRemark")
-
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.background,
-                                border = BorderStroke(1.dp, colors.borderSubtle),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(text = month, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                                        if (examDate.isNotBlank()) {
-                                            Text(
-                                                text = examDate,
-                                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                                                color = colors.textMuted
-                                            )
-                                        }
-                                    }
-                                    Text(
-                                        text = "Theory: $theory / $theoryMax   •   Lab: $lab / $labMax",
-                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
-                                        color = colors.emeraldAccent
-                                    )
-                                    if (remarks.isNotBlank()) {
-                                        Text(text = remarks, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = colors.cardSurface,
-                border = BorderStroke(1.dp, colors.borderSubtle),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Submit Work / Lab Mark Query",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    OutlinedTextField(
-                        value = monthLabel,
-                        onValueChange = { monthLabel = it },
-                        label = { Text("Month / Exam Label") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colors.skyAccent,
-                            unfocusedBorderColor = colors.borderSubtle,
-                            focusedContainerColor = MaterialTheme.colorScheme.background,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.background
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = workReference,
-                        onValueChange = { workReference = it },
-                        label = { Text("Lab Job / Workshop Task Reference") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colors.skyAccent,
-                            unfocusedBorderColor = colors.borderSubtle,
-                            focusedContainerColor = MaterialTheme.colorScheme.background,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.background
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = currentMarkNote,
-                        onValueChange = { currentMarkNote = it },
-                        label = { Text("Current Recorded Mark (Optional)") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colors.skyAccent,
-                            unfocusedBorderColor = colors.borderSubtle,
-                            focusedContainerColor = MaterialTheme.colorScheme.background,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.background
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = traineeNote,
-                        onValueChange = { traineeNote = it },
-                        label = { Text("Query / Review Details") },
-                        minLines = 2,
-                        maxLines = 4,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colors.skyAccent,
-                            unfocusedBorderColor = colors.borderSubtle,
-                            focusedContainerColor = MaterialTheme.colorScheme.background,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.background
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    AnimatedVisibility(visible = uiState.workQueryMessage != null) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            InlineAlertCard(message = uiState.workQueryMessage.orEmpty(), isError = false)
-                            androidx.compose.material3.TextButton(onClick = onDismissWorkQueryFeedback) {
-                                Text("Dismiss")
-                            }
-                        }
-                    }
-                    AnimatedVisibility(visible = uiState.workQueryError != null) {
-                        InlineAlertCard(message = uiState.workQueryError.orEmpty(), isError = true)
-                    }
-
-                    Button(
-                        onClick = {
-                            onSubmitWorkMarkQuery(monthLabel, workReference, currentMarkNote, traineeNote) {
-                                workReference = ""
-                                currentMarkNote = ""
-                                traineeNote = ""
-                            }
-                        },
-                        enabled = !uiState.isSubmittingWorkQuery,
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = colors.skyAccent,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier.fillMaxWidth().height(50.dp)
-                    ) {
-                        if (uiState.isSubmittingWorkQuery) {
-                            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Submitting Query...")
-                        } else {
-                            Text("Send Mark Query to Instructor", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
-                        }
-                    }
-                }
-            }
-        }
-
-        if (queries.isNotEmpty()) {
-            item {
-                Text(
-                    text = "My Mark Queries (${queries.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            items(queries) { q ->
-                val ref = readTraineeField(q, "getWorkReference", "getMonthLabel")
-                val note = readTraineeField(q, "getTraineeNote", "getNote")
-                val status = readTraineeField(q, "getStatus").ifBlank { "OPEN" }
-                val reply = readTraineeField(q, "getInstructorReply", "getReply")
-
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = colors.cardSurface,
-                    border = BorderStroke(1.dp, colors.borderSubtle),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(text = "$ref [$status]", style = MaterialTheme.typography.titleSmall, color = colors.skyAccent)
-                        if (note.isNotBlank()) {
-                            Text(text = note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                        if (reply.isNotBlank()) {
-                            Text(text = "Instructor Reply: $reply", style = MaterialTheme.typography.bodySmall, color = colors.emeraldAccent)
-                        }
-                    }
-                }
-            }
-        }
+        Icon(icon, contentDescription = tab.label, modifier = Modifier.size(22.dp))
     }
 }

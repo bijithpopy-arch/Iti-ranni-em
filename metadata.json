@@ -1,6 +1,6 @@
 {
   "name": "ITI Ranni EM",
-  "description": "Govt. ITI Ranni — Electronics Mechanic (2025–2027) Attendance & Out-Pass System with ESP8266 live sync, digital signature out-pass workflow, and staff approval portal.",
+  "description": "Govt. ITI Ranni Electronics Mechanic Attendance, Out-Pass, Shop Floor, Signed Marks Register & Bilingual Tech Portal",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

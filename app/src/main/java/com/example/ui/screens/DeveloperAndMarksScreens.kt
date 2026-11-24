@@ -1,16 +1,74 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FactCheck
+import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Publish
+import androidx.compose.material.icons.rounded.QuestionAnswer
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.AttendanceApiClient
+import com.example.data.DutyRotationEngine
+import com.example.data.WorkMarkQuery
+import com.example.pdf.PdfReportGenerator
+import com.example.ui.components.DigitalSignaturePad
+import com.example.ui.components.DigitalSignaturePreview
+import com.example.ui.components.InlineAlertCard
+import com.example.ui.theme.JetBrainsMonoFamily
+import com.example.ui.theme.LocalItiColors
+import com.example.viewmodel.AppUiState
 
 @Composable
 fun ReportBugButtonAndDialog(
@@ -27,7 +85,8 @@ fun ReportBugButtonAndDialog(
 
     OutlinedButton(
         onClick = { showDialog = true },
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+        modifier = Modifier.testTag("report_bug_button")
     ) {
         Text("Report Bug", style = MaterialTheme.typography.labelMedium)
     }
@@ -47,7 +106,9 @@ fun ReportBugButtonAndDialog(
                         onValueChange = { description = it },
                         label = { Text("Describe what went wrong") },
                         minLines = 3,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("bug_description_input")
                     )
                 }
             },
@@ -58,7 +119,8 @@ fun ReportBugButtonAndDialog(
                         onSubmitBug(screenName, reportedBy, role, appVersion, description.trim())
                         description = ""
                         showDialog = false
-                    }
+                    },
+                    modifier = Modifier.testTag("bug_submit_button")
                 ) { Text("Send to Developer") }
             },
             dismissButton = {
@@ -113,21 +175,29 @@ fun DeveloperMasterPanel(
                         OutlinedTextField(
                             value = banner,
                             onValueChange = { banner = it },
-                            label = { Text("Lock / Maintenance Banner Message") },
-                            modifier = Modifier.fillMaxWidth()
+                            label = { Text("Custom Red Maintenance Banner Message") },
+                            placeholder = { Text("Enter custom word or notice shown on center red card") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dev_maintenance_banner_input")
                         )
                     }
                     item {
                         OutlinedTextField(
                             value = newDevPin,
                             onValueChange = { newDevPin = it },
-                            label = { Text("Developer PIN") },
-                            modifier = Modifier.fillMaxWidth()
+                            label = { Text("Developer Secret PIN") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dev_pin_input")
                         )
                     }
                     item {
                         Button(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dev_save_config_button"),
                             onClick = {
                                 onSaveAppConfig(
                                     mapOf(
@@ -258,95 +328,686 @@ private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean
     }
 }
 
+/**
+ * MAJOR FEATURE: Full-class Roll #01–#23 Practical & Theory Marks Register Table
+ * with inline mark editing, live total & percentage calculation, finger-drawn
+ * Digital Signature Pad, Google Sheets batch publish, PDF export, and Query Review.
+ */
 @Composable
-fun InstructorExamMarksPanel(
-    initialRows: List<ExamMarkRow>,
+fun InstructorMarksRegisterTablePanel(
+    uiState: AppUiState,
     onSaveDraftOffline: (monthLabel: String, rows: List<ExamMarkRow>) -> Unit,
-    onPublishMarks: (monthLabel: String, rows: List<ExamMarkRow>) -> Unit,
-    onExportMarksPdf: (monthLabel: String, rows: List<ExamMarkRow>) -> Unit
+    onPublishSignedMarksTable: (
+        monthLabel: String,
+        examDate: String,
+        theoryMax: Int,
+        labMax: Int,
+        rows: List<ExamMarkRow>,
+        signedBy: String,
+        signatureData: String
+    ) -> Unit,
+    onDismissFeedback: () -> Unit,
+    onReplyWorkMarkQuery: (queryId: String, status: String, reply: String, onReset: () -> Unit) -> Unit,
+    onDismissWorkQueryReplyFeedback: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    var monthLabel by remember { mutableStateOf("Nov 2026 Monthly Exam") }
-    val rows = remember(initialRows) {
-        mutableStateListOf<ExamMarkRow>().apply { addAll(initialRows.sortedBy { it.roll }) }
+    val colors = LocalItiColors.current
+    val context = LocalContext.current
+    val staffData = uiState.staffData
+
+    var monthLabel by remember { mutableStateOf("Nov 2026 Monthly Evaluation") }
+    var examDate by remember { mutableStateOf(AttendanceApiClient.todayIstDateString()) }
+    var theoryMaxStr by remember { mutableStateOf("50") }
+    var labMaxStr by remember { mutableStateOf("100") }
+    var signedBy by remember { mutableStateOf("Trade Instructor (EM)") }
+    var signatureData by remember { mutableStateOf("") }
+    var sigResetKey by remember { mutableIntStateOf(0) }
+    var localPdfFeedback by remember { mutableStateOf<String?>(null) }
+    var validationWarning by remember { mutableStateOf<String?>(null) }
+
+    val theoryMax = (theoryMaxStr.toIntOrNull() ?: 50).coerceIn(1, 500)
+    val labMax = (labMaxStr.toIntOrNull() ?: 100).coerceIn(1, 500)
+
+    val attendanceByRoll = remember(staffData?.allAttendance) {
+        staffData?.allAttendance.orEmpty().associateBy { it.roll.toIntOrNull() ?: -1 }
+    }
+    val existingMarksByRoll = remember(staffData?.monthlyMarks) {
+        staffData?.monthlyMarks.orEmpty().associateBy { it.roll.toIntOrNull() ?: -1 }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-        Text("Exam Marks Entry (Roll Order)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
-        OutlinedTextField(
-            value = monthLabel,
-            onValueChange = { monthLabel = it },
-            label = { Text("Exam / Month Title") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(8.dp))
-
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Roll & Trainee", modifier = Modifier.weight(1.6f), fontWeight = FontWeight.Bold)
-            Text("Theory /50", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-            Text("Lab /100", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-            Text("Total", modifier = Modifier.weight(0.7f), fontWeight = FontWeight.Bold)
+    val rows = remember(staffData?.allAttendance, staffData?.monthlyMarks) {
+        mutableStateListOf<ExamMarkRow>().apply {
+            for (roll in 1..DutyRotationEngine.TOTAL_TRAINEES) {
+                val att = attendanceByRoll[roll]
+                val mark = existingMarksByRoll[roll]
+                val resolvedName = att?.name?.takeIf { it.isNotBlank() }
+                    ?: mark?.studentName?.takeIf { it.isNotBlank() }
+                    ?: "Trainee #${roll.toString().padStart(2, '0')}"
+                add(
+                    ExamMarkRow(
+                        roll = roll,
+                        name = resolvedName,
+                        theoryMarks = mark?.theoryMarks?.toString().orEmpty(),
+                        labMarks = mark?.labMarks?.toString().orEmpty(),
+                        remarks = mark?.remarks.orEmpty(),
+                        published = mark?.published ?: false
+                    )
+                )
+            }
         }
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+    }
 
-        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            itemsIndexed(rows, key = { _, item -> item.roll }) { index, item ->
+    val enteredCount = rows.count { it.theoryMarks.isNotBlank() || it.labMarks.isNotBlank() }
+    val lastSignedMark = staffData?.monthlyMarks?.firstOrNull { it.signedBy.isNotBlank() || it.signatureData.isNotBlank() }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("instructor_marks_register_table"),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.45f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Class Marks Register (Roll #01–#23)",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Enter Theory & Practical marks for every trainee, digitally sign & publish",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textMuted
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = colors.emeraldContainer,
+                            border = BorderStroke(1.dp, colors.emeraldAccent.copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = "$enteredCount/23 Entered",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = colors.emeraldAccent,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = monthLabel,
+                        onValueChange = { monthLabel = it },
+                        label = { Text("Exam / Month Title") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.skyAccent,
+                            unfocusedBorderColor = colors.borderSubtle,
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("marks_table_month_input")
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = examDate,
+                            onValueChange = { examDate = it },
+                            label = { Text("Exam Date") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1.3f)
+                        )
+                        OutlinedTextField(
+                            value = theoryMaxStr,
+                            onValueChange = { theoryMaxStr = it.filter { ch -> ch.isDigit() }.take(3) },
+                            label = { Text("Theory Max") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = labMaxStr,
+                            onValueChange = { labMaxStr = it.filter { ch -> ch.isDigit() }.take(3) },
+                            label = { Text("Practical Max") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Table Header Row
+        item {
+            Surface(
+                shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp),
+                color = colors.skyContainer,
+                border = BorderStroke(1.dp, colors.skyAccent.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        "${item.roll}. ${item.name}",
-                        modifier = Modifier.weight(1.6f),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    OutlinedTextField(
-                        value = item.theoryMarks,
-                        onValueChange = { raw ->
-                            val clean = raw.filter { it.isDigit() }.take(2)
-                            val clamped = (clean.toIntOrNull()?.coerceAtMost(50)?.toString()) ?: ""
-                            rows[index] = item.copy(theoryMarks = clamped)
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = item.labMarks,
-                        onValueChange = { raw ->
-                            val clean = raw.filter { it.isDigit() }.take(3)
-                            val clamped = (clean.toIntOrNull()?.coerceAtMost(100)?.toString()) ?: ""
-                            rows[index] = item.copy(labMarks = clamped)
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
+                        text = "Roll",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
+                        color = colors.skyAccent,
+                        modifier = Modifier.width(34.dp)
                     )
                     Text(
-                        "${item.totalOutOf150}/150",
-                        modifier = Modifier.weight(0.7f),
-                        fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.bodySmall
+                        text = "Trainee Name",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = colors.skyAccent,
+                        modifier = Modifier.weight(1.45f)
+                    )
+                    Text(
+                        text = "Theory /$theoryMax",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
+                        color = colors.skyAccent,
+                        modifier = Modifier.weight(0.95f)
+                    )
+                    Text(
+                        text = "Pract /$labMax",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
+                        color = colors.skyAccent,
+                        modifier = Modifier.weight(0.95f)
+                    )
+                    Text(
+                        text = "Total",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold),
+                        color = colors.skyAccent,
+                        modifier = Modifier.width(56.dp)
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = { onSaveDraftOffline(monthLabel, rows.toList()) },
-                modifier = Modifier.weight(1f)
-            ) { Text("Save Offline") }
-            Button(
-                onClick = { onPublishMarks(monthLabel, rows.toList()) },
-                modifier = Modifier.weight(1.2f)
-            ) { Text("Publish & Notify") }
-            OutlinedButton(
-                onClick = { onExportMarksPdf(monthLabel, rows.toList()) },
-                modifier = Modifier.weight(0.9f)
-            ) { Text("PDF") }
+        // 23-Trainee Table Rows
+        itemsIndexed(rows, key = { _, row -> "mark_row_${row.roll}" }) { index, item ->
+            val totalVal = item.total(theoryMax, labMax)
+            val totalMax = theoryMax + labMax
+            val pct = ((totalVal * 100f) / totalMax.coerceAtLeast(1)).toInt().coerceIn(0, 100)
+            val pctColor = when {
+                item.theoryMarks.isBlank() && item.labMarks.isBlank() -> colors.textMuted
+                pct >= 60 -> colors.emeraldAccent
+                pct >= 40 -> colors.amberAccent
+                else -> colors.redAccent
+            }
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (index % 2 == 0) colors.cardSurface else colors.cardElevated.copy(alpha = 0.65f),
+                border = BorderStroke(
+                    1.dp,
+                    if (item.published) colors.emeraldAccent.copy(alpha = 0.45f) else colors.borderSubtle
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("marks_table_row_${item.roll}")
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = colors.skyContainer,
+                            modifier = Modifier.width(34.dp)
+                        ) {
+                            Text(
+                                text = item.roll.toString().padStart(2, '0'),
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = colors.skyAccent,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+                            )
+                        }
+
+                        Column(modifier = Modifier.weight(1.45f)) {
+                            Text(
+                                text = item.name,
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (item.published) {
+                                Text(
+                                    text = "Published",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                                    color = colors.emeraldAccent
+                                )
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = item.theoryMarks,
+                            onValueChange = { raw ->
+                                val digits = raw.filter { it.isDigit() }.take(3)
+                                val clamped = digits.toIntOrNull()?.coerceAtMost(theoryMax)?.toString().orEmpty()
+                                rows[index] = item.copy(theoryMarks = clamped)
+                            },
+                            placeholder = { Text("0-$theoryMax", style = MaterialTheme.typography.labelSmall) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(8.dp),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = JetBrainsMonoFamily,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            modifier = Modifier
+                                .weight(0.95f)
+                                .testTag("marks_theory_input_${item.roll}")
+                        )
+
+                        OutlinedTextField(
+                            value = item.labMarks,
+                            onValueChange = { raw ->
+                                val digits = raw.filter { it.isDigit() }.take(3)
+                                val clamped = digits.toIntOrNull()?.coerceAtMost(labMax)?.toString().orEmpty()
+                                rows[index] = item.copy(labMarks = clamped)
+                            },
+                            placeholder = { Text("0-$labMax", style = MaterialTheme.typography.labelSmall) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(8.dp),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = JetBrainsMonoFamily,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            modifier = Modifier
+                                .weight(0.95f)
+                                .testTag("marks_lab_input_${item.roll}")
+                        )
+
+                        Column(
+                            modifier = Modifier.width(56.dp),
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            Text(
+                                text = "$totalVal/$totalMax",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = pctColor
+                            )
+                            Text(
+                                text = "$pct%",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                                color = pctColor
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = item.remarks,
+                        onValueChange = { rows[index] = item.copy(remarks = it) },
+                        placeholder = { Text("Optional remark (e.g., Good practical soldering / Absent)", style = MaterialTheme.typography.labelSmall) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("marks_remark_input_${item.roll}")
+                    )
+                }
+            }
+        }
+
+        // Instructor Digital Signature Pad & Publish Card
+        item {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.5.dp, colors.emeraldAccent.copy(alpha = 0.55f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Verified,
+                            contentDescription = null,
+                            tint = colors.emeraldAccent,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Instructor Digital Signature & Authentication",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = signedBy,
+                        onValueChange = { signedBy = it },
+                        label = { Text("Instructor Signatory Title / Name") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("marks_signed_by_input")
+                    )
+
+                    DigitalSignaturePad(
+                        defaultSignerName = signedBy,
+                        resetKey = sigResetKey,
+                        onSignatureChanged = { signatureData = it },
+                        title = "Sign Register Sheet Below",
+                        tagPrefix = "instructor_marks_sig"
+                    )
+
+                    if (lastSignedMark != null && signatureData.isBlank()) {
+                        DigitalSignaturePreview(
+                            signedBy = lastSignedMark.signedBy,
+                            signedAt = lastSignedMark.signedAt,
+                            signatureData = lastSignedMark.signatureData
+                        )
+                    }
+
+                    AnimatedVisibility(visible = validationWarning != null) {
+                        InlineAlertCard(message = validationWarning.orEmpty(), isError = true)
+                    }
+                    AnimatedVisibility(visible = uiState.monthlyMarkMessage != null) {
+                        InlineAlertCard(message = uiState.monthlyMarkMessage.orEmpty(), isError = false)
+                    }
+                    AnimatedVisibility(visible = uiState.monthlyMarkError != null) {
+                        InlineAlertCard(message = uiState.monthlyMarkError.orEmpty(), isError = true)
+                    }
+                    AnimatedVisibility(visible = localPdfFeedback != null) {
+                        InlineAlertCard(message = localPdfFeedback.orEmpty(), isError = false)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { onSaveDraftOffline(monthLabel, rows.toList()) },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("marks_save_draft_button")
+                        ) {
+                            Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text("Save Draft", style = MaterialTheme.typography.labelMedium)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val res = PdfReportGenerator.generateAndShareMarksPdf(
+                                    context = context,
+                                    monthLabel = monthLabel,
+                                    examDate = examDate,
+                                    theoryMax = theoryMax,
+                                    labMax = labMax,
+                                    rows = rows.toList(),
+                                    signedBy = signedBy,
+                                    signatureData = signatureData.ifBlank { lastSignedMark?.signatureData.orEmpty() }
+                                )
+                                localPdfFeedback = res.fold(
+                                    onSuccess = { "Signed Marks Register PDF exported." },
+                                    onFailure = { it.message ?: "PDF export failed." }
+                                )
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, colors.skyAccent),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.skyAccent),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("marks_export_pdf_button")
+                        ) {
+                            Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text("Signed PDF", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            onDismissFeedback()
+                            val filledRows = rows.filter { it.theoryMarks.isNotBlank() || it.labMarks.isNotBlank() }
+                            if (filledRows.isEmpty()) {
+                                validationWarning = "Enter Theory or Practical marks for at least one trainee first."
+                                return@Button
+                            }
+                            if (signatureData.isBlank()) {
+                                validationWarning = "Please draw your digital signature above before signing & publishing."
+                                return@Button
+                            }
+                            validationWarning = null
+                            onPublishSignedMarksTable(
+                                monthLabel.trim(),
+                                examDate.trim(),
+                                theoryMax,
+                                labMax,
+                                filledRows,
+                                signedBy.trim().ifBlank { "Trade Instructor (EM)" },
+                                signatureData
+                            )
+                        },
+                        enabled = !uiState.isSavingMonthlyMark,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.emeraldAccent,
+                            contentColor = MaterialTheme.colorScheme.onSecondary
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("marks_sign_and_publish_all_button")
+                    ) {
+                        if (uiState.isSavingMonthlyMark) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.onSecondary,
+                                strokeWidth = 2.5.dp,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Signing & Publishing Marks (${enteredCount})...")
+                        } else {
+                            Icon(Icons.Rounded.Publish, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Digitally Sign & Publish All ($enteredCount Entered)",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Work / Lab Mark Queries Review Section
+        val queries = staffData?.workMarkQueries.orEmpty()
+        item {
+            Spacer(Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Rounded.QuestionAnswer, contentDescription = null, tint = colors.amberAccent, modifier = Modifier.size(18.dp))
+                Text(
+                    text = "Trainee Work / Lab Mark Queries (${queries.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        if (uiState.workQueryReplyMessage != null) {
+            item { InlineAlertCard(message = uiState.workQueryReplyMessage, isError = false) }
+        }
+        if (uiState.workQueryReplyError != null) {
+            item { InlineAlertCard(message = uiState.workQueryReplyError, isError = true) }
+        }
+
+        if (queries.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.cardSurface,
+                    border = BorderStroke(1.dp, colors.borderSubtle),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "No open work/practical mark queries from trainees.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textMuted,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+        } else {
+            items(queries, key = { "wmq_${it.id}_${it.roll}" }) { query ->
+                WorkMarkQueryReviewCard(
+                    query = query,
+                    isReplying = uiState.replyingWorkQueryId == query.id,
+                    onReply = { status, replyText, reset ->
+                        onDismissWorkQueryReplyFeedback()
+                        onReplyWorkMarkQuery(query.id, status, replyText, reset)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkMarkQueryReviewCard(
+    query: WorkMarkQuery,
+    isReplying: Boolean,
+    onReply: (status: String, replyText: String, onReset: () -> Unit) -> Unit
+) {
+    val colors = LocalItiColors.current
+    var replyInput by remember(query.id) { mutableStateOf(query.instructorReply) }
+    val statusColor = when (query.status.uppercase()) {
+        "REVISED" -> colors.emeraldAccent
+        "RESOLVED" -> colors.skyAccent
+        else -> colors.amberAccent
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colors.cardSurface,
+        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Roll #${query.roll} • ${query.studentName}",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = statusColor.copy(alpha = 0.18f)
+                ) {
+                    Text(
+                        text = query.status.uppercase(),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = JetBrainsMonoFamily,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = statusColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+            Text(
+                text = "${query.workReference}${if (query.monthLabel.isNotBlank()) " (${query.monthLabel})" else ""}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.skyAccent
+            )
+            if (query.traineeNote.isNotBlank()) {
+                Text(
+                    text = "Trainee Note: ${query.traineeNote}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            OutlinedTextField(
+                value = replyInput,
+                onValueChange = { replyInput = it },
+                label = { Text("Instructor Reply / Revision Note") },
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { onReply("RESOLVED", replyInput) {} },
+                    enabled = !isReplying && replyInput.isNotBlank(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Mark Checked", style = MaterialTheme.typography.labelSmall)
+                }
+                Button(
+                    onClick = { onReply("REVISED", replyInput) {} },
+                    enabled = !isReplying && replyInput.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.emeraldAccent, contentColor = MaterialTheme.colorScheme.onSecondary),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Rounded.FactCheck, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Mark Revised", style = MaterialTheme.typography.labelSmall)
+                }
+            }
         }
     }
 }

@@ -49,14 +49,21 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,7 +74,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -82,6 +88,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.R
 import com.example.data.UserRole
 import com.example.ui.components.EspStatusBadge
@@ -151,19 +158,18 @@ fun LoginScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Subtle atmospheric circuit board artwork at top
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(260.dp)
         ) {
             Image(
-                painter = painterResource(id = R.drawable.img_electronics_banner_1795176910701),
+                painter = painterResource(id = R.drawable.img_electronics_banner_1795543229995),
                 contentDescription = stringResource(R.string.cd_circuit_banner),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
-                    .alpha(0.26f)
+                    .alpha(0.28f)
             )
             Box(
                 modifier = Modifier
@@ -219,7 +225,7 @@ fun LoginScreen(
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "Attendance, Shop Floor & Out-Pass Portal",
+                                text = "Attendance, Marks & Out-Pass Portal",
                                 style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -230,7 +236,6 @@ fun LoginScreen(
                             )
                         }
 
-                        // Quick Fingerprint Unlock Card if saved credentials & biometrics are enabled
                         AnimatedVisibility(visible = uiState.hasSavedCredentials && uiState.biometricEnabled && biometricAvailable) {
                             Surface(
                                 onClick = onFingerprintUnlockClick,
@@ -254,7 +259,7 @@ fun LoginScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
-                                            imageVector = androidx.compose.material.icons.Icons.Rounded.Fingerprint,
+                                            imageVector = Icons.Rounded.Fingerprint,
                                             contentDescription = "Unlock with Fingerprint",
                                             tint = colors.emeraldAccent,
                                             modifier = Modifier.size(24.dp)
@@ -276,13 +281,11 @@ fun LoginScreen(
                             }
                         }
 
-                        // 4-Role Grid Selector (Trainee, Parent, Trade Instructor, Principal)
                         RoleGridSelector(
                             selectedRole = uiState.selectedRole,
                             onRoleSelected = onRoleSelected
                         )
 
-                        // Roll Number input (Trainee & Parent — strictly Roll #01 to Roll #23)
                         AnimatedVisibility(
                             visible = needsRollNumber,
                             enter = expandVertically() + fadeIn(),
@@ -317,7 +320,7 @@ fun LoginScreen(
                                         )
                                     },
                                     trailingIcon = {
-                                        androidx.compose.material3.TextButton(
+                                        TextButton(
                                             onClick = { rollMenuExpanded = true },
                                             modifier = Modifier.testTag("login_roll_picker_button")
                                         ) {
@@ -349,7 +352,7 @@ fun LoginScreen(
                                         .testTag("login_roll_input")
                                 )
 
-                                androidx.compose.material3.DropdownMenu(
+                                DropdownMenu(
                                     expanded = rollMenuExpanded,
                                     onDismissRequest = { rollMenuExpanded = false },
                                     modifier = Modifier
@@ -357,7 +360,7 @@ fun LoginScreen(
                                         .height(280.dp)
                                 ) {
                                     (1..23).forEach { roll ->
-                                        androidx.compose.material3.DropdownMenuItem(
+                                        DropdownMenuItem(
                                             text = {
                                                 Text(
                                                     text = "Roll #${roll.toString().padStart(2, '0')}",
@@ -437,7 +440,6 @@ fun LoginScreen(
                                 .testTag("login_pin_input")
                         )
 
-                        // Remember Me + Fingerprint Unlock Preferences
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = MaterialTheme.colorScheme.background,
@@ -457,10 +459,10 @@ fun LoginScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        androidx.compose.material3.Checkbox(
+                                        Checkbox(
                                             checked = uiState.rememberMe,
                                             onCheckedChange = onRememberMeChanged,
-                                            colors = androidx.compose.material3.CheckboxDefaults.colors(
+                                            colors = CheckboxDefaults.colors(
                                                 checkedColor = colors.skyAccent,
                                                 checkmarkColor = MaterialTheme.colorScheme.onPrimary
                                             ),
@@ -473,7 +475,7 @@ fun LoginScreen(
                                         )
                                     }
                                     if (uiState.hasSavedCredentials) {
-                                        androidx.compose.material3.TextButton(
+                                        TextButton(
                                             onClick = onClearSavedLogin,
                                             modifier = Modifier.testTag("clear_saved_login_button")
                                         ) {
@@ -500,7 +502,7 @@ fun LoginScreen(
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Icon(
-                                                imageVector = androidx.compose.material.icons.Icons.Rounded.Fingerprint,
+                                                imageVector = Icons.Rounded.Fingerprint,
                                                 contentDescription = null,
                                                 tint = if (uiState.biometricEnabled) colors.emeraldAccent else colors.textMuted,
                                                 modifier = Modifier.size(18.dp)
@@ -511,10 +513,10 @@ fun LoginScreen(
                                                 color = colors.textMuted
                                             )
                                         }
-                                        androidx.compose.material3.Switch(
+                                        Switch(
                                             checked = uiState.biometricEnabled,
                                             onCheckedChange = onBiometricEnabledChanged,
-                                            colors = androidx.compose.material3.SwitchDefaults.colors(
+                                            colors = SwitchDefaults.colors(
                                                 checkedThumbColor = MaterialTheme.colorScheme.onSecondary,
                                                 checkedTrackColor = colors.emeraldAccent
                                             ),
@@ -609,7 +611,6 @@ fun LoginScreen(
                     }
                 }
 
-                // In-App Updater Pill (GitHub Releases)
                 Surface(
                     onClick = onCheckUpdateClick,
                     shape = RoundedCornerShape(14.dp),
@@ -631,7 +632,7 @@ fun LoginScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Rounded.SystemUpdate,
+                                imageVector = Icons.Rounded.SystemUpdate,
                                 contentDescription = null,
                                 tint = colors.skyAccent,
                                 modifier = Modifier.size(20.dp)
@@ -643,7 +644,7 @@ fun LoginScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Installed v${com.example.BuildConfig.VERSION_NAME} • GitHub Releases Self-Updater",
+                                    text = "Installed v${BuildConfig.VERSION_NAME} • GitHub Releases",
                                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                                     color = colors.textMuted
                                 )
@@ -715,7 +716,7 @@ private fun InstitutionalHeaderCard() {
                         height = 32.dp
                     )
                     Image(
-                        painter = painterResource(id = R.drawable.img_iti_skill_badge_1795176906201),
+                        painter = painterResource(id = R.drawable.img_iti_skill_badge_1795543228780),
                         contentDescription = stringResource(R.string.cd_iti_badge),
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

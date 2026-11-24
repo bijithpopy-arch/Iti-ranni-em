@@ -12,31 +12,27 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.example.MainActivity
 import com.example.R
-import com.example.data.ParentAlertTypes
+import com.example.data.NoticeItem
 import com.example.data.ParentDashboardData
 import com.example.data.StaffDashboardData
 import com.example.data.TraineeDashboardData
 import com.example.data.UserRole
 
 object AttendanceNotificationHelper {
-    const val CHANNEL_ID_ALERTS_V2 = "emech_urgent_alerts_v2"
-    const val CHANNEL_ID_SYNC_V2 = "emech_sync_alerts_v2"
-
-    private const val PREFS_RINGTONE = "emech_ringtone_prefs"
-    private const val KEY_CUSTOM_URI = "custom_ringtone_uri"
-
-    private const val PREFS_STATE = "emech_notification_state_prefs"
+    private const val PREFS_NAME = "iti_ranni_notifications_prefs"
     private const val KEY_LAST_SEEN_NOTICE_ID = "last_seen_notice_id"
-    private const val KEY_LAST_NOTIFIED_NOTICE_ID = "last_notified_notice_id"
-    private const val KEY_TRAINEE_SIG = "trainee_eval_sig"
-    private const val KEY_PARENT_SIG = "parent_eval_sig"
-    private const val KEY_PARENT_ATTENDANCE_SENT = "parent_attendance_sent"
-    private const val KEY_PARENT_MARKS_SIG = "parent_marks_sig"
-    private const val KEY_STAFF_SIG = "staff_eval_sig"
-    private const val KEY_INSTRUCTOR_ALERT_SIG = "instructor_urgent_sig"
+    private const val KEY_NOTIFIED_NOTICE_ID = "last_notified_notice_id"
+    private const val KEY_SELECTED_SOUND_URI = "selected_sound_uri"
+    private const val KEY_LAST_MARKS_SIG = "last_marks_sig"
+    private const val KEY_LAST_PARENT_ATT_DATE = "last_parent_att_date"
+    private const val KEY_LAST_URGENT_KEY = "last_urgent_key"
+
+    const val CHANNEL_NOTICES = "iti_notices_v2"
+    const val CHANNEL_ALERTS = "iti_alerts_v2"
 
     fun hasNotificationPermission(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -44,357 +40,235 @@ object AttendanceNotificationHelper {
                 context,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
-        } else {
-            true
-        }
+        } else true
     }
 
-    fun defaultCustomSoundUri(context: Context): Uri =
-        Uri.parse("android.resource://${context.packageName}/${R.raw.custom_alert}")
+    fun defaultCustomSoundUri(): Uri =
+        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
     fun getSelectedSoundUri(context: Context): Uri {
-        val saved = context.getSharedPreferences(PREFS_RINGTONE, Context.MODE_PRIVATE)
-            .getString(KEY_CUSTOM_URI, null)
-        return if (!saved.isNullOrBlank()) Uri.parse(saved) else defaultCustomSoundUri(context)
+        val raw = context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_SELECTED_SOUND_URI, null)
+        return if (!raw.isNullOrBlank()) Uri.parse(raw) else defaultCustomSoundUri()
     }
 
     fun getSelectedRingtoneTitle(context: Context): String {
         val uri = getSelectedSoundUri(context)
-        if (uri.scheme == "android.resource") return "Built-in Custom Alert (custom_alert.mp3)"
         return try {
-            RingtoneManager.getRingtone(context, uri)?.getTitle(context) ?: "Custom Phone Ringtone"
+            RingtoneManager.getRingtone(context, uri)?.getTitle(context) ?: "System Default"
         } catch (_: Exception) {
-            "Custom Phone Ringtone"
+            "System Default"
         }
     }
 
     fun setSelectedSoundUri(context: Context, uri: Uri?) {
-        context.getSharedPreferences(PREFS_RINGTONE, Context.MODE_PRIVATE)
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
-            .putString(KEY_CUSTOM_URI, uri?.toString())
+            .putString(KEY_SELECTED_SOUND_URI, uri?.toString().orEmpty())
             .apply()
         recreateChannelsWithNewSound(context)
     }
 
     fun recreateChannelsWithNewSound(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.deleteNotificationChannel(CHANNEL_ID_ALERTS_V2)
-        manager.deleteNotificationChannel(CHANNEL_ID_SYNC_V2)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.deleteNotificationChannel(CHANNEL_NOTICES)
+            nm.deleteNotificationChannel(CHANNEL_ALERTS)
+        }
         ensureChannels(context)
     }
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val soundUri = getSelectedSoundUri(context)
-
-        val audioAttrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+        val audioAttr = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
-        val alertChannel = NotificationChannel(
-            CHANNEL_ID_ALERTS_V2,
-            "ITI Ranni EM Alerts",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Attendance, exam marks, and urgent alerts"
-            setSound(soundUri, audioAttrs)
-            enableVibration(true)
-        }
-
-        val syncChannel = NotificationChannel(
-            CHANNEL_ID_SYNC_V2,
-            "Offline Sync & Updates",
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = "Background queue sync and app update notifications"
-            setSound(soundUri, audioAttrs)
-        }
-
-        manager.createNotificationChannel(alertChannel)
-        manager.createNotificationChannel(syncChannel)
-    }
-
-    fun showAlert(
-        context: Context,
-        title: String,
-        message: String,
-        notificationId: Int = (System.currentTimeMillis() % 100000).toInt()
-    ) {
-        ensureChannels(context)
-        if (!hasNotificationPermission(context)) return
-
-        val openIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            notificationId,
-            openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val soundUri = getSelectedSoundUri(context)
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID_ALERTS_V2)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-            .setSound(soundUri)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        try {
-            manager.notify(notificationId, notification)
-        } catch (_: SecurityException) {
-            // Permission revoked at runtime
-        }
-    }
-
-    fun playLoudAlertTone(context: Context) {
-        val soundUri = getSelectedSoundUri(context)
-        runCatching {
-            val ringtone = RingtoneManager.getRingtone(context.applicationContext, soundUri)
-            if (ringtone != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    ringtone.volume = 1.0f
+        if (nm.getNotificationChannel(CHANNEL_NOTICES) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_NOTICES, "Campus Notices & Broadcasts", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "College notices, exam schedules, holidays & marks updates"
+                    enableVibration(true)
+                    setSound(soundUri, audioAttr)
                 }
-                ringtone.audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-                ringtone.play()
-            }
-        }.onFailure {
-            runCatching {
-                val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                RingtoneManager.getRingtone(context.applicationContext, fallback)?.play()
-            }
+            )
         }
-    }
-    // ---------- Notice Read/Unread Helpers ----------
-
-    private fun extractStringProp(obj: Any?, getterName: String): String? {
-        if (obj == null) return null
-        return runCatching {
-            obj.javaClass.getMethod(getterName).invoke(obj)?.toString()
-        }.getOrNull()?.takeIf { it.isNotBlank() }
-    }
-
-    private fun extractNoticeId(notice: Any?): String? =
-        extractStringProp(notice, "getId") ?: notice?.toString()?.takeIf { it.isNotBlank() }
-
-    fun getLastSeenNoticeId(context: Context): String? =
-        context.applicationContext
-            .getSharedPreferences(PREFS_STATE, Context.MODE_PRIVATE)
-            .getString(KEY_LAST_SEEN_NOTICE_ID, null)
-
-    fun countUnreadNotices(context: Context, notices: List<Any>): Int {
-        if (notices.isEmpty()) return 0
-        val lastSeen = getLastSeenNoticeId(context) ?: return notices.size
-        val idx = notices.indexOfFirst { extractNoticeId(it) == lastSeen }
-        return if (idx < 0) notices.size else idx
-    }
-
-    fun markNoticesSeen(context: Context, latestId: String?) {
-        if (latestId.isNullOrBlank()) return
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_STATE, Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString(KEY_LAST_SEEN_NOTICE_ID, latestId)
-            .putString(KEY_LAST_NOTIFIED_NOTICE_ID, latestId)
-            .apply()
-    }
-
-    fun notifyNewNoticeIfNeeded(
-        context: Context,
-        notices: List<Any>,
-        pinnedBroadcast: Any? = null
-    ) {
-        val target = pinnedBroadcast ?: notices.firstOrNull() ?: return
-        val targetId = extractNoticeId(target) ?: return
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_STATE, Context.MODE_PRIVATE)
-        val lastSeen = prefs.getString(KEY_LAST_SEEN_NOTICE_ID, null)
-        val lastNotified = prefs.getString(KEY_LAST_NOTIFIED_NOTICE_ID, null)
-        if (targetId == lastSeen || targetId == lastNotified) return
-
-        val title = extractStringProp(target, "getTitle") ?: "New College Notice"
-        val body = extractStringProp(target, "getBody")
-            ?: extractStringProp(target, "getMessage")
-            ?: "Open Govt. ITI Ranni (EM) to read the latest announcement."
-
-        prefs.edit().putString(KEY_LAST_NOTIFIED_NOTICE_ID, targetId).apply()
-        showAlert(context, title = title, message = body, notificationId = 2001)
-    }
-
-    // ---------- Published Update Evaluators ----------
-
-    fun evaluateTraineePublishedUpdates(
-        context: Context,
-        data: TraineeDashboardData,
-        seedBaselineOnly: Boolean = false
-    ) {
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_STATE, Context.MODE_PRIVATE)
-        val latestNoticeId = data.pinnedBroadcast?.id ?: data.notices.firstOrNull()?.id.orEmpty()
-        val holidayDate = data.todayHoliday?.date.orEmpty()
-        val leavesSig = data.leaves.joinToString("|") { "${it.id}:${it.status}" }
-        val sig = "${data.roll}|${data.attendanceDate}|${data.attendanceClosed}|${data.attendance.todayStatus}|$latestNoticeId|$holidayDate|$leavesSig"
-
-        val prevSig = prefs.getString(KEY_TRAINEE_SIG, null)
-        prefs.edit().putString(KEY_TRAINEE_SIG, sig).apply()
-
-        if (seedBaselineOnly || prevSig == null || prevSig == sig) return
-
-        val latestLeave = data.leaves.firstOrNull()
-        val msg = when {
-            latestNoticeId.isNotBlank() && !prevSig.contains(latestNoticeId) ->
-                "A new notice or broadcast was published for Roll #${data.roll}."
-            data.todayHoliday != null ->
-                "Holiday update posted for ${data.todayHoliday.date}."
-            latestLeave != null ->
-                "Leave/Out-Pass ${latestLeave.id} status: ${latestLeave.status}."
-            else ->
-                "Attendance updated for ${data.attendanceDate}: ${data.attendance.todayStatus}."
-        }
-        showAlert(context, title = "ITI Ranni EM • Update", message = msg, notificationId = 2101)
-    }
-
-    fun evaluateParentPublishedUpdates(
-        context: Context,
-        data: ParentDashboardData,
-        seedBaselineOnly: Boolean = false
-    ) {
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_STATE, Context.MODE_PRIVATE)
-        val latestNoticeId = data.pinnedBroadcast?.id ?: data.notices.firstOrNull()?.id.orEmpty()
-        val sig = "${data.roll}|${data.attendanceDate}|${data.attendanceClosed}|${data.attendance.todayStatus}|$latestNoticeId|${data.monthlyMarks.size}|${data.parentAlerts.size}"
-
-        val prevSig = prefs.getString(KEY_PARENT_SIG, null)
-        prefs.edit().putString(KEY_PARENT_SIG, sig).apply()
-
-        if (seedBaselineOnly) {
-            val marksSig = "${data.roll}|${data.monthlyMarks.size}|${data.parentAlerts.count { it.alertType.contains("MARKS", true) }}"
-            prefs.edit().putString(KEY_PARENT_MARKS_SIG, marksSig).apply()
-            return
-        }
-
-        notifyParentIfConfirmedAndEligible(context, data)
-        notifyParentMarksUpdatedIfNeeded(context, data)
-
-        if (prevSig != null && prevSig != sig && latestNoticeId.isNotBlank() && !prevSig.contains(latestNoticeId)) {
-            showAlert(
-                context,
-                title = "College Notice • Govt. ITI Ranni",
-                message = "New notice or broadcast published for ${data.studentName} (Roll #${data.roll}).",
-                notificationId = 2201
+        if (nm.getNotificationChannel(CHANNEL_ALERTS) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ALERTS, "Attendance & Urgent Alerts", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Absentee alerts, mark review queries & running late notifications"
+                    enableVibration(true)
+                    setSound(soundUri, audioAttr)
+                }
             )
         }
     }
 
-    fun notifyParentIfConfirmedAndEligible(context: Context, data: ParentDashboardData): Boolean {
-        if (!hasNotificationPermission(context)) return false
-        if (data.todayHoliday != null || !data.attendanceClosed) return false
+    fun playLoudAlertTone(context: Context) {
+        try {
+            val uri = getSelectedSoundUri(context)
+            RingtoneManager.getRingtone(context, uri)?.play()
+        } catch (_: Exception) {
+        }
+    }
 
-        val statusUpper = data.attendance.todayStatus.trim().uppercase()
-        val isAlertStatus = statusUpper == "ABSENT" || statusUpper.contains("HALF") || statusUpper == "LATE"
-        if (!isAlertStatus) return false
+    fun getLastSeenNoticeId(context: Context): String? =
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_SEEN_NOTICE_ID, null)
 
-        val sentKey = "${data.roll}|${data.attendanceDate}|$statusUpper"
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_STATE, Context.MODE_PRIVATE)
-        if (prefs.getString(KEY_PARENT_ATTENDANCE_SENT, null) == sentKey) return false
+    fun countUnreadNotices(context: Context, notices: List<NoticeItem>): Int {
+        if (notices.isEmpty()) return 0
+        val lastSeen = getLastSeenNoticeId(context) ?: return notices.size
+        val idx = notices.indexOfFirst { it.id == lastSeen }
+        return if (idx < 0) notices.size else idx
+    }
 
-        prefs.edit().putString(KEY_PARENT_ATTENDANCE_SENT, sentKey).apply()
+    fun markNoticesSeen(context: Context, latestNoticeId: String?) {
+        if (latestNoticeId.isNullOrBlank()) return
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LAST_SEEN_NOTICE_ID, latestNoticeId)
+            .putString(KEY_NOTIFIED_NOTICE_ID, latestNoticeId)
+            .apply()
+    }
+
+    fun notifyNewNoticeIfNeeded(context: Context, notices: List<NoticeItem>) {
+        val newest = notices.firstOrNull() ?: return
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getString(KEY_NOTIFIED_NOTICE_ID, null) == newest.id) return
+        prefs.edit().putString(KEY_NOTIFIED_NOTICE_ID, newest.id).apply()
         showAlert(
-            context,
-            title = "Attendance Alert: ${data.studentName}",
-            message = "Confirmed register status for ${data.attendanceDate}: $statusUpper (Roll #${data.roll}).",
-            notificationId = 2202
+            context = context,
+            channelId = CHANNEL_NOTICES,
+            notifId = newest.id.hashCode(),
+            title = if (newest.isPinned) "Pinned Broadcast: ${newest.title}" else "New Notice: ${newest.title}",
+            body = newest.body.ifBlank { "Tap to read on Govt. ITI Ranni portal." }
+        )
+    }
+
+    fun evaluateTraineePublishedUpdates(context: Context, data: TraineeDashboardData, seedBaselineOnly: Boolean) {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val newestNotice = data.notices.firstOrNull()
+        val marksSig = data.monthlyMarks.joinToString("|") { "${it.id}:${it.theoryMarks}:${it.labMarks}:${it.signedAt}" }
+        if (seedBaselineOnly) {
+            prefs.edit().apply {
+                if (newestNotice != null && getLastSeenNoticeId(context) == null) {
+                    putString(KEY_NOTIFIED_NOTICE_ID, newestNotice.id)
+                }
+                putString(KEY_LAST_MARKS_SIG, marksSig)
+            }.apply()
+            return
+        }
+        notifyNewNoticeIfNeeded(context, data.notices)
+        val prevMarksSig = prefs.getString(KEY_LAST_MARKS_SIG, "")
+        if (marksSig.isNotBlank() && marksSig != prevMarksSig) {
+            prefs.edit().putString(KEY_LAST_MARKS_SIG, marksSig).apply()
+            val latest = data.monthlyMarks.firstOrNull()
+            showAlert(
+                context = context,
+                channelId = CHANNEL_NOTICES,
+                notifId = 4102,
+                title = "Exam Marks Published (${latest?.monthLabel ?: "Monthly Exam"})",
+                body = if (latest != null) "Theory ${latest.theoryMarks}/${latest.theoryMax}, Practical ${latest.labMarks}/${latest.labMax}" else "Updated marks available."
+            )
+        }
+    }
+
+    fun evaluateParentPublishedUpdates(context: Context, data: ParentDashboardData, seedBaselineOnly: Boolean) {
+        if (seedBaselineOnly) return
+        notifyParentIfConfirmedAndEligible(context, data)
+        notifyParentMarksUpdatedIfNeeded(context, data)
+    }
+
+    fun notifyParentIfConfirmedAndEligible(context: Context, data: ParentDashboardData): Boolean {
+        if (!data.attendanceClosed || data.todayHoliday != null) return false
+        val status = data.attendance.todayStatus.uppercase()
+        if (status != "ABSENT" && !status.contains("HALF")) return false
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val key = "${data.attendanceDate}:$status"
+        if (prefs.getString(KEY_LAST_PARENT_ATT_DATE, null) == key) return false
+        prefs.edit().putString(KEY_LAST_PARENT_ATT_DATE, key).apply()
+        showAlert(
+            context = context,
+            channelId = CHANNEL_ALERTS,
+            notifId = 5101,
+            title = "Attendance Alert: ${data.studentName} ($status)",
+            body = "Daily attendance closed at ${data.closedAt.ifBlank { "campus" }}. Status today: $status."
         )
         return true
     }
 
     fun notifyParentMarksUpdatedIfNeeded(context: Context, data: ParentDashboardData): Boolean {
-        if (!hasNotificationPermission(context)) return false
-        val marksAlertsCount = data.parentAlerts.count {
-            it.alertType.equals(ParentAlertTypes.MARKS_PUBLISHED, true) ||
-                it.alertType.equals(ParentAlertTypes.MARKS_UPDATED, true)
-        }
-        val sig = "${data.roll}|${data.monthlyMarks.size}|$marksAlertsCount"
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_STATE, Context.MODE_PRIVATE)
-        val prev = prefs.getString(KEY_PARENT_MARKS_SIG, null)
-        if (prev == sig) return false
-
-        prefs.edit().putString(KEY_PARENT_MARKS_SIG, sig).apply()
-        if (prev == null && marksAlertsCount == 0) return false
-        if (data.monthlyMarks.isEmpty() && marksAlertsCount == 0) return false
-
+        val sig = data.monthlyMarks.joinToString("|") { "${it.id}:${it.theoryMarks}:${it.labMarks}:${it.signedAt}" }
+        if (sig.isBlank()) return false
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prev = prefs.getString("${KEY_LAST_MARKS_SIG}_parent", "")
+        if (sig == prev) return false
+        prefs.edit().putString("${KEY_LAST_MARKS_SIG}_parent", sig).apply()
+        val latest = data.monthlyMarks.firstOrNull()
         showAlert(
-            context,
-            title = "Monthly Exam Marks Updated",
-            message = "New monthly theory/lab marks are available for ${data.studentName} (Roll #${data.roll}).",
-            notificationId = 2203
+            context = context,
+            channelId = CHANNEL_NOTICES,
+            notifId = 5102,
+            title = "Ward Exam Marks Published (${latest?.monthLabel ?: "Results"})",
+            body = if (latest != null) "${data.studentName}: Theory ${latest.theoryMarks}/${latest.theoryMax}, Lab ${latest.labMarks}/${latest.labMax}" else "New marks published."
         )
         return true
     }
 
-    fun evaluateStaffPublishedUpdates(
-        context: Context,
-        data: StaffDashboardData,
-        activeRole: UserRole,
-        seedBaselineOnly: Boolean = false
-    ) {
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_STATE, Context.MODE_PRIVATE)
-        val sig = "${activeRole.name}|${data.pendingLeaves.size}|${data.parentAlerts.size}|${data.runningLateAlerts.size}|${data.workMarkQueries.size}"
-        val prev = prefs.getString(KEY_STAFF_SIG, null)
-        prefs.edit().putString(KEY_STAFF_SIG, sig).apply()
-
-        if (seedBaselineOnly || prev == null || prev == sig) return
-
-        val summary = buildString {
-            if (data.pendingLeaves.isNotEmpty()) append("Pending leaves: ${data.pendingLeaves.size}. ")
-            if (data.runningLateAlerts.isNotEmpty()) append("Running late alerts: ${data.runningLateAlerts.size}. ")
-            if (data.workMarkQueries.isNotEmpty()) append("Mark queries: ${data.workMarkQueries.size}.")
-        }.ifBlank { "New staff dashboard update available." }
-
-        showAlert(
-            context,
-            title = "${activeRole.displayName} • New Updates",
-            message = summary.trim(),
-            notificationId = 2301
-        )
+    fun evaluateStaffPublishedUpdates(context: Context, data: StaffDashboardData, activeRole: UserRole, seedBaselineOnly: Boolean) {
+        if (seedBaselineOnly) return
+        notifyInstructorUrgentAlertsIfNeeded(context, data)
     }
 
     fun notifyInstructorUrgentAlertsIfNeeded(context: Context, data: StaffDashboardData) {
+        val latestLate = data.runningLateAlerts.firstOrNull()
+        val latestQuery = data.workMarkQueries.firstOrNull { it.status == "OPEN" }
+        val key = "${latestLate?.id.orEmpty()}:${latestQuery?.id.orEmpty()}"
+        if (key == ":") return
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getString(KEY_LAST_URGENT_KEY, null) == key) return
+        prefs.edit().putString(KEY_LAST_URGENT_KEY, key).apply()
+        if (latestLate != null) {
+            showAlert(
+                context = context,
+                channelId = CHANNEL_ALERTS,
+                notifId = 6101,
+                title = "Running Late: Roll #${latestLate.roll} ${latestLate.studentName}",
+                body = "Expected ${latestLate.expectedArrival} (${latestLate.reasonCategory})"
+            )
+        }
+    }
+
+    fun showAlert(context: Context, channelId: String, notifId: Int, title: String, body: String) {
         if (!hasNotificationPermission(context)) return
-        val urgentAlerts = data.parentAlerts.filter {
-            val t = it.alertType.uppercase()
-            t == ParentAlertTypes.BUNK_ALERT ||
-                t == ParentAlertTypes.LEAVE_REASON ||
-                t == ParentAlertTypes.TRAINEE_RUNNING_LATE
+        ensureChannels(context)
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        val latestUrgentId = urgentAlerts.firstOrNull()?.id.orEmpty()
-        val sig = "$latestUrgentId|${data.runningLateAlerts.size}|${data.workMarkQueries.size}"
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_STATE, Context.MODE_PRIVATE)
-        val prev = prefs.getString(KEY_INSTRUCTOR_ALERT_SIG, null)
-        if (prev == sig) return
-
-        prefs.edit().putString(KEY_INSTRUCTOR_ALERT_SIG, sig).apply()
-        if (urgentAlerts.isEmpty() && data.runningLateAlerts.isEmpty()) return
-
-        val latest = urgentAlerts.firstOrNull()
-        val msg = if (latest != null) {
-            "Roll #${latest.roll} ${latest.studentName}: ${latest.message}"
-        } else {
-            "${data.runningLateAlerts.size} running-late / parent alert(s) received."
-        }
-        showAlert(
+        val pi = PendingIntent.getActivity(
             context,
-            title = "Urgent Instructor Alert",
-            message = msg,
-            notificationId = 2302
+            notifId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val notif = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(notifId, notif)
+        } catch (_: SecurityException) {
+        }
     }
 }
