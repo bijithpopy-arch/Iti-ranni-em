@@ -26,47 +26,41 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Locate Android project & grant gradlew permission
         id: locate
         run: |
           set -e
           PROJECT_DIR="."
-          GRADLEW_PATH=$(find . -maxdepth 4 -name "gradlew" -type f | head -n 1 || true)
-          if [ -n "$GRADLEW_PATH" ]; then
-            PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-            chmod +x "$GRADLEW_PATH"
-            echo "Found gradlew at $GRADLEW_PATH"
-          else
-            BUILD_FILE=$(find . -maxdepth 4 \( -name "build.gradle" -o -name "build.gradle.kts" \) -type f | head -n 1 || true)
-            if [ -n "$BUILD_FILE" ]; then
-              PROJECT_DIR=$(dirname "$BUILD_FILE")
-            fi
-            echo "gradlew not found — using system gradle in $PROJECT_DIR"
-            sudo apt-get update -y && sudo apt-get install -y gradle
+          SETTINGS_FILE=$(find . -maxdepth 4 \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -type f | head -n 1 || true)
+          if [ -n "$SETTINGS_FILE" ]; then
+            PROJECT_DIR=$(dirname "$SETTINGS_FILE")
           fi
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Resolved Android root: $PROJECT_DIR"
           ls -la "$PROJECT_DIR"
+
+          if [ -f "$PROJECT_DIR/gradlew" ]; then
+            chmod +x "$PROJECT_DIR/gradlew"
+            echo "has_wrapper=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_wrapper=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Gradle
+        if: steps.locate.outputs.has_wrapper == 'false'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
 
       - name: Build Debug APK
         run: |
           set -e
           cd "${{ steps.locate.outputs.project_dir }}"
           if [ -f "./gradlew" ]; then
-            GRADLE_CMD="./gradlew"
+            ./gradlew :app:assembleDebug --no-daemon
           else
-            GRADLE_CMD="gradle"
-          fi
-
-          if $GRADLE_CMD tasks --all | grep -q ":app:assembleDebug"; then
-            $GRADLE_CMD :app:assembleDebug --no-daemon
-          elif $GRADLE_CMD tasks --all | grep -q "assembleDebug"; then
-            $GRADLE_CMD assembleDebug --no-daemon
-          else
-            echo "assembleDebug not found. Available tasks:"
-            $GRADLE_CMD tasks --no-daemon
-            exit 1
+            gradle :app:assembleDebug --no-daemon
           fi
 
       - name: Generate version.json manifest for in-app updater
@@ -89,6 +83,7 @@ jobs:
             "espKeyConfigured": true
           }
           EOF
+          cat ./version.json
 
       - name: Publish app-debug.apk and version.json to "latest" GitHub Release
         uses: softprops/action-gh-release@v2
