@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  ESP_SECRET: ${{ secrets.ESP_SECRET || 'EMECH_KEY_2026' }}
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -21,42 +24,73 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: "17"
           cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Locate Android project & grant gradlew permission
+        id: locate
+        run: |
+          set -e
+          PROJECT_DIR="."
+          if [ ! -f "./gradlew" ]; then
+            FOUND_GRADLEW=$(find . -maxdepth 3 -name "gradlew" -type f | head -n 1 || true)
+            if [ -n "$FOUND_GRADLEW" ]; then
+              PROJECT_DIR=$(dirname "$FOUND_GRADLEW")
+            fi
+          fi
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+          if [ -f "$PROJECT_DIR/gradlew" ]; then
+            chmod +x "$PROJECT_DIR/gradlew"
+          else
+            echo "gradlew not found at $PROJECT_DIR — installing Gradle CLI fallback"
+            sudo apt-get update -y && sudo apt-get install -y gradle
+          fi
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          set -e
+          cd "${{ steps.locate.outputs.project_dir }}"
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
 
       - name: Generate version.json manifest for in-app updater
-        id: meta
+        id: manifest
         run: |
-          VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K\d+' app/build.gradle.kts | head -n 1)
-          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -n 1)
-          REPO="${{ github.repository }}"
-          cat <<EOF > version.json
+          set -e
+          PROJECT_DIR="${{ steps.locate.outputs.project_dir }}"
+          APK_PATH=$(find "$PROJECT_DIR" -path "*/build/outputs/apk/debug/*.apk" -type f | head -n 1)
+          test -n "$APK_PATH"
+          cp "$APK_PATH" ./app-debug.apk
+
+          VERSION_NAME="1.0.${{ github.run_number }}"
+          VERSION_CODE="${{ github.run_number }}"
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/latest/app-debug.apk"
+
+          cat <<EOF > ./version.json
           {
-            "versionCode": ${VERSION_CODE:-1},
-            "versionName": "${VERSION_NAME:-1.0}",
-            "apkUrl": "https://github.com/${REPO}/releases/latest/download/app-debug.apk",
-            "changelog": "Automated build from commit ${GITHUB_SHA::7} — Late Grace Quick-Mark Table, accurate attendance %, Mon-Fri duty rotation, Shop Floor logout scans, Fingerprint unlock & role dashboards."
+            "versionCode": ${VERSION_CODE},
+            "versionName": "${VERSION_NAME}",
+            "apkUrl": "${DOWNLOAD_URL}",
+            "espKeyConfigured": true
           }
           EOF
-          cat version.json
+          cat ./version.json
 
-      - name: Publish app-debug.apk and version.json to 'latest' GitHub Release
+      - name: Publish app-debug.apk and version.json to "latest" GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "Govt. ITI Ranni EM — Latest Build"
-          body: "Latest automated build for Govt. ITI Ranni Electronics Mechanic Attendance & Out-Pass Android App."
+          name: Latest Build
           draft: false
           prerelease: false
           make_latest: true
           files: |
-            app/build/outputs/apk/debug/app-debug.apk
-            version.json
+            ./app-debug.apk
+            ./version.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
