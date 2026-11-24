@@ -1359,3 +1359,278 @@ internal fun InlineAlertCard(
         }
     }
 }
+private fun readTraineeField(obj: Any, vararg getterNames: String): String {
+    for (name in getterNames) {
+        val value = runCatching { obj.javaClass.getMethod(name).invoke(obj)?.toString() }.getOrNull()
+        if (!value.isNullOrBlank()) return value
+    }
+    return ""
+}
+
+private fun readTraineeListProp(obj: Any?, vararg getterNames: String): List<Any> {
+    if (obj == null) return emptyList()
+    for (name in getterNames) {
+        val list = runCatching { obj.javaClass.getMethod(name).invoke(obj) as? List<*> }
+            .getOrNull()
+            ?.filterNotNull()
+        if (list != null) return list
+    }
+    return emptyList()
+}
+
+@Composable
+private fun TraineeMarksAndQueriesTab(
+    uiState: AppUiState,
+    onSubmitWorkMarkQuery: (
+        monthLabel: String,
+        workReference: String,
+        currentMarkNote: String,
+        traineeNote: String,
+        onSuccessReset: () -> Unit
+    ) -> Unit,
+    onDismissWorkQueryFeedback: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalItiColors.current
+    val marks = remember(uiState.traineeData) {
+        readTraineeListProp(uiState.traineeData, "getMonthlyMarks", "getMyMonthlyMarks", "getExamMarks")
+    }
+    val queries = remember(uiState.traineeData) {
+        readTraineeListProp(uiState.traineeData, "getWorkMarkQueries", "getMyWorkMarkQueries", "getMarkQueries")
+    }
+
+    var monthLabel by remember { mutableStateOf("Nov 2026") }
+    var workReference by remember { mutableStateOf("") }
+    var currentMarkNote by remember { mutableStateOf("") }
+    var traineeNote by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("trainee_marks_queries_tab"),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.borderSubtle),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Monthly Theory & Lab Marks",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (marks.isEmpty()) {
+                        Text(
+                            text = "No monthly theory or lab exam marks published yet.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textMuted
+                        )
+                    } else {
+                        marks.forEach { item ->
+                            val month = readTraineeField(item, "getMonthLabel", "getMonth", "getExamMonth").ifBlank { "Monthly Exam" }
+                            val examDate = readTraineeField(item, "getExamDate", "getDate")
+                            val theory = readTraineeField(item, "getTheoryMarks", "getTheory").ifBlank { "-" }
+                            val theoryMax = readTraineeField(item, "getTheoryMax").ifBlank { "50" }
+                            val lab = readTraineeField(item, "getLabMarks", "getLab", "getPracticalMarks").ifBlank { "-" }
+                            val labMax = readTraineeField(item, "getLabMax").ifBlank { "100" }
+                            val remarks = readTraineeField(item, "getRemarks", "getRemark")
+
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.background,
+                                border = BorderStroke(1.dp, colors.borderSubtle),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(text = month, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                        if (examDate.isNotBlank()) {
+                                            Text(
+                                                text = examDate,
+                                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                                                color = colors.textMuted
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = "Theory: $theory / $theoryMax   •   Lab: $lab / $labMax",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
+                                        color = colors.emeraldAccent
+                                    )
+                                    if (remarks.isNotBlank()) {
+                                        Text(text = remarks, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = colors.cardSurface,
+                border = BorderStroke(1.dp, colors.borderSubtle),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Submit Work / Lab Mark Query",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    OutlinedTextField(
+                        value = monthLabel,
+                        onValueChange = { monthLabel = it },
+                        label = { Text("Month / Exam Label") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.skyAccent,
+                            unfocusedBorderColor = colors.borderSubtle,
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = workReference,
+                        onValueChange = { workReference = it },
+                        label = { Text("Lab Job / Workshop Task Reference") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.skyAccent,
+                            unfocusedBorderColor = colors.borderSubtle,
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = currentMarkNote,
+                        onValueChange = { currentMarkNote = it },
+                        label = { Text("Current Recorded Mark (Optional)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.skyAccent,
+                            unfocusedBorderColor = colors.borderSubtle,
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = traineeNote,
+                        onValueChange = { traineeNote = it },
+                        label = { Text("Query / Review Details") },
+                        minLines = 2,
+                        maxLines = 4,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.skyAccent,
+                            unfocusedBorderColor = colors.borderSubtle,
+                            focusedContainerColor = MaterialTheme.colorScheme.background,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.background
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    AnimatedVisibility(visible = uiState.workQueryMessage != null) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            InlineAlertCard(message = uiState.workQueryMessage.orEmpty(), isError = false)
+                            androidx.compose.material3.TextButton(onClick = onDismissWorkQueryFeedback) {
+                                Text("Dismiss")
+                            }
+                        }
+                    }
+                    AnimatedVisibility(visible = uiState.workQueryError != null) {
+                        InlineAlertCard(message = uiState.workQueryError.orEmpty(), isError = true)
+                    }
+
+                    Button(
+                        onClick = {
+                            onSubmitWorkMarkQuery(monthLabel, workReference, currentMarkNote, traineeNote) {
+                                workReference = ""
+                                currentMarkNote = ""
+                                traineeNote = ""
+                            }
+                        },
+                        enabled = !uiState.isSubmittingWorkQuery,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.skyAccent,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth().height(50.dp)
+                    ) {
+                        if (uiState.isSubmittingWorkQuery) {
+                            CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Submitting Query...")
+                        } else {
+                            Text("Send Mark Query to Instructor", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                        }
+                    }
+                }
+            }
+        }
+
+        if (queries.isNotEmpty()) {
+            item {
+                Text(
+                    text = "My Mark Queries (${queries.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            items(queries) { q ->
+                val ref = readTraineeField(q, "getWorkReference", "getMonthLabel")
+                val note = readTraineeField(q, "getTraineeNote", "getNote")
+                val status = readTraineeField(q, "getStatus").ifBlank { "OPEN" }
+                val reply = readTraineeField(q, "getInstructorReply", "getReply")
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.cardSurface,
+                    border = BorderStroke(1.dp, colors.borderSubtle),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(text = "$ref [$status]", style = MaterialTheme.typography.titleSmall, color = colors.skyAccent)
+                        if (note.isNotBlank()) {
+                            Text(text = note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        if (reply.isNotBlank()) {
+                            Text(text = "Instructor Reply: $reply", style = MaterialTheme.typography.bodySmall, color = colors.emeraldAccent)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
