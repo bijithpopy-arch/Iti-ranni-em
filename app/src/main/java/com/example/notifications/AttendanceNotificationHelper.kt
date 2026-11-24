@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -27,11 +28,29 @@ object AttendanceNotificationHelper {
         return if (!saved.isNullOrBlank()) Uri.parse(saved) else defaultCustomSoundUri(context)
     }
 
+    fun getSelectedRingtoneTitle(context: Context): String {
+        val uri = getSelectedSoundUri(context)
+        if (uri.scheme == "android.resource") return "Built-in Custom Alert (custom_alert.mp3)"
+        return try {
+            RingtoneManager.getRingtone(context, uri)?.getTitle(context) ?: "Custom Phone Ringtone"
+        } catch (_: Exception) {
+            "Custom Phone Ringtone"
+        }
+    }
+
     fun setSelectedSoundUri(context: Context, uri: Uri?) {
         context.getSharedPreferences(PREFS_RINGTONE, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_CUSTOM_URI, uri?.toString())
             .apply()
+        recreateChannelsWithNewSound(context)
+    }
+
+    fun recreateChannelsWithNewSound(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.deleteNotificationChannel(CHANNEL_ID_ALERTS_V2)
+        manager.deleteNotificationChannel(CHANNEL_ID_SYNC_V2)
         ensureChannels(context)
     }
 
