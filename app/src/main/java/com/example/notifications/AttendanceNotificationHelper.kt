@@ -155,10 +155,6 @@ object AttendanceNotificationHelper {
             // Permission revoked at runtime
         }
     }
-} catch (_: SecurityException) {
-            // Permission revoked at runtime
-        }
-    }
 
     fun playLoudAlertTone(context: Context) {
         val soundUri = getSelectedSoundUri(context)
@@ -181,9 +177,7 @@ object AttendanceNotificationHelper {
             }
         }
     }
-
     // ---------- Notice Read/Unread Helpers ----------
-
 
     private fun extractStringProp(obj: Any?, getterName: String): String? {
         if (obj == null) return null
