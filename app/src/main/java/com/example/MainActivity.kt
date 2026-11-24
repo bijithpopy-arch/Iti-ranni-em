@@ -217,7 +217,7 @@ fun AppRoot(
             "1.0"
         }
     }
-       val devPanelState: MutableState<Boolean> = remember<MutableState<Boolean>> {
+    val devPanelState: MutableState<Boolean> = remember<MutableState<Boolean>> {
         mutableStateOf<Boolean>(false)
     }
     var showDeveloperPanel: Boolean by devPanelState
@@ -367,7 +367,6 @@ fun AppRoot(
         }
     }
 }
-
 @Composable
 private fun RenderSessionScreens(
     uiState: AppUiState,
