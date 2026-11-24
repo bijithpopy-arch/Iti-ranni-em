@@ -2545,9 +2545,39 @@ class AppViewModel(
     }
 
     fun onEspRollChanged(value: String) = onEspRollInputChanged(value)
+fun triggerManualEspTap() {
+        val current = _uiState.value
+        if (current.isTappingEsp) return
+        val rollNum = current.espRollInput.toIntOrNull()
+        if (rollNum == null || rollNum !in 1..DutyRotationEngine.TOTAL_TRAINEES) {
+            _uiState.update { it.copy(espTapError = "Enter a valid trainee Roll Number (1–23).") }
+            return
+        }
 
-    fun triggerManualEspTap() {
-        fun saveDutyOverride(
+        viewModelScope.launch {
+            _uiState.update { it.copy(isTappingEsp = true, espTapError = null) }
+            when (val result = apiClient.triggerEspTap(rollNum.toString())) {
+                is ApiResult.Success -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            isTappingEsp = false,
+                            lastEspTap = result.data,
+                            espTapHistory = listOf(result.data) + state.espTapHistory.take(9),
+                            espTapError = null
+                        )
+                    }
+                    refreshStaffDashboard()
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(isTappingEsp = false, espTapError = result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    fun saveDutyOverride(
         dateKey: String,
         firstRoll: Int,
         secondRoll: Int,
@@ -2750,36 +2780,6 @@ class AppViewModel(
             )
         }
     }
-    }
-        val current = _uiState.value
-        if (current.isTappingEsp) return
-        val rollNum = current.espRollInput.toIntOrNull()
-        if (rollNum == null || rollNum !in 1..DutyRotationEngine.TOTAL_TRAINEES) {
-            _uiState.update { it.copy(espTapError = "Enter a valid trainee Roll Number (1–23).") }
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isTappingEsp = true, espTapError = null) }
-            when (val result = apiClient.triggerEspTap(rollNum.toString())) {
-                is ApiResult.Success -> {
-                    _uiState.update { state ->
-                        state.copy(
-                            isTappingEsp = false,
-                            lastEspTap = result.data,
-                            espTapHistory = listOf(result.data) + state.espTapHistory.take(9),
-                            espTapError = null
-                        )
-                    }
-                    refreshStaffDashboard()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isTappingEsp = false, espTapError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    
+}
+    fun triggerManualEspTap() {
+                            
