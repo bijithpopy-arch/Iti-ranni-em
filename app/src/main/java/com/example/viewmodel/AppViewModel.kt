@@ -26,6 +26,8 @@ import com.example.notifications.AttendanceNotificationHelper
 import com.example.notifications.BackgroundSyncConfig
 import com.example.notifications.BackgroundSyncScheduler
 import com.example.security.SessionPreferences
+import com.example.ui.screens.RemoteAppConfig
+import com.example.ui.screens.RemoteUiConfig
 import com.example.updater.AppUpdateInfo
 import com.example.updater.AppUpdater
 import com.example.updater.UpdateCheckResult
@@ -41,7 +43,9 @@ sealed interface SessionScreen {
     data object ParentDashboard : SessionScreen
     data object StaffDashboard : SessionScreen
     data object PrincipalDashboard : SessionScreen
+    data object DeveloperDashboard : SessionScreen
 }
+
 
 data class AppUiState(
     val screen: SessionScreen = SessionScreen.Login,
@@ -57,6 +61,14 @@ data class AppUiState(
     val biometricMessage: String? = null,
     val isLoggingIn: Boolean = false,
     val loginError: String? = null,
+        // Remote Developer Config, Live UI Config & Bug Reports state
+    val remoteAppConfig: RemoteAppConfig = RemoteAppConfig(),
+    val remoteUiConfig: RemoteUiConfig = RemoteUiConfig(),
+    val bugReports: List> = emptyList(),
+    val isUpdatingDeveloperConfig: Boolean = false,
+    val developerFeedbackMessage: String? = null,
+    val developerError: String? = null,
+    
 
     // In-App Self-Updater state
     val isCheckingUpdate: Boolean = false,
@@ -272,6 +284,73 @@ class AppViewModel(
     }
 
     fun clearSavedSession(context: Context) {
+            fun openDeveloperConsole(pin: String) {
+        if (pin.trim() != _uiState.value.remoteAppConfig.developerPin) {
+            _uiState.update { it.copy(loginError = "Invalid Developer PIN.") }
+            return
+        }
+        _uiState.update {
+            it.copy(screen = SessionScreen.DeveloperDashboard, loginError = null)
+        }
+    }
+
+    fun updateRemoteAppConfig(updates: Map<String, String>) {
+        val merged = mutableMapOf(
+            "developerPin" to _uiState.value.remoteAppConfig.developerPin,
+            "updaterEnabled" to _uiState.value.remoteAppConfig.updaterEnabled.toString(),
+            "instructorAccessEnabled" to _uiState.value.remoteAppConfig.instructorAccessEnabled.toString(),
+            "principalAccessEnabled" to _uiState.value.remoteAppConfig.principalAccessEnabled.toString(),
+            "maintenanceMode" to _uiState.value.remoteAppConfig.maintenanceMode.toString(),
+            "maintenanceBanner" to _uiState.value.remoteAppConfig.maintenanceBanner
+        ).apply { putAll(updates) }
+        _uiState.update {
+            it.copy(
+                remoteAppConfig = RemoteAppConfig.fromMap(merged),
+                developerFeedbackMessage = "Updated remote app settings."
+            )
+        }
+    }
+
+    fun saveRemoteUiConfig(updates: Map<String, String>, screen: String = "Global") {
+        val merged = _uiState.value.remoteUiConfig.rawOverrides.toMutableMap().apply { putAll(updates) }
+        _uiState.update {
+            it.copy(
+                remoteUiConfig = RemoteUiConfig.fromMap(merged),
+                developerFeedbackMessage = "Live UI settings updated ($screen)."
+            )
+        }
+    }
+
+    fun submitBugReport(screenName: String, reportedBy: String, role: String, appVersion: String, description: String) {
+        val report = mapOf(
+            "BugId" to "BUG-${System.currentTimeMillis()}",
+            "ScreenName" to screenName,
+            "ReportedBy" to reportedBy,
+            "Role" to role,
+            "AppVersion" to appVersion,
+            "Description" to description,
+            "Status" to "OPEN",
+            "DevReply" to ""
+        )
+        _uiState.update { it.copy(bugReports = listOf(report) + it.bugReports) }
+    }
+
+    fun resolveBugReport(bugId: String, reply: String) {
+        _uiState.update { state ->
+            state.copy(
+                bugReports = state.bugReports.map {
+                    if (it["BugId"] == bugId) it + mapOf("Status" to "FIXED", "DevReply" to reply) else it
+                }
+            )
+        }
+    }
+
+    fun editSheetCell(tabName: String, rowIndex: Int, colName: String, newValue: String) {
+        _uiState.update {
+            it.copy(developerFeedbackMessage = "Queued edit on $tabName row $rowIndex ($colName = $newValue).")
+        }
+    }
+    
         SessionPreferences.clearAll(context)
         BackgroundSyncConfig.clear(context)
         BackgroundSyncScheduler.cancelAll(context)
@@ -290,8 +369,10 @@ class AppViewModel(
 
     // ---------- In-App Self-Updater ----------
 
-    fun checkForAppUpdate(silentIfUpToDate: Boolean = false) {
+        fun checkForAppUpdate(silentIfUpToDate: Boolean = false) {
+        if (!_uiState.value.remoteAppConfig.updaterEnabled) return
         if (_uiState.value.isCheckingUpdate) return
+
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -407,8 +488,9 @@ class AppViewModel(
         when (_uiState.value.screen) {
             SessionScreen.TraineeDashboard -> refreshTraineeDashboard()
             SessionScreen.ParentDashboard -> refreshParentDashboard()
-            SessionScreen.StaffDashboard, SessionScreen.PrincipalDashboard -> refreshStaffDashboard()
-            SessionScreen.Login -> Unit
+                            SessionScreen.StaffDashboard, SessionScreen.PrincipalDashboard -> refreshStaffDashboard()
+                SessionScreen.DeveloperDashboard, SessionScreen.Login -> Unit
+
         }
     }
 
@@ -434,6 +516,17 @@ class AppViewModel(
     fun login(context: Context? = null) {
         val current = _uiState.value
         if (current.isLoggingIn) return
+                if (current.pinInput.trim() == current.remoteAppConfig.developerPin) {
+            openDeveloperConsole(current.pinInput.trim())
+            return
+        }
+        if (current.remoteAppConfig.maintenanceMode) {
+            _uiState.update {
+                it.copy(loginError = current.remoteAppConfig.maintenanceBanner.ifBlank { "App is under maintenance." })
+            }
+            return
+        }
+        
 
         when (current.selectedRole) {
             UserRole.TRAINEE -> {
@@ -466,7 +559,15 @@ class AppViewModel(
                 if (current.pinInput.isBlank()) {
                     _uiState.update { it.copy(loginError = "Please enter your Staff PIN.") }
                     return
-                }
+                }        if (current.selectedRole == UserRole.TRADE_INSTRUCTOR && !current.remoteAppConfig.instructorAccessEnabled) {
+            _uiState.update { it.copy(loginError = "Instructor (2025) admin access is currently shut down.") }
+            return
+        }
+        if (current.selectedRole == UserRole.PRINCIPAL && !current.remoteAppConfig.principalAccessEnabled) {
+            _uiState.update { it.copy(loginError = "Principal (9999) admin access is currently shut down.") }
+            return
+        }
+        
                 performStaffLogin(current.selectedRole, current.pinInput.trim(), context)
             }
         }
