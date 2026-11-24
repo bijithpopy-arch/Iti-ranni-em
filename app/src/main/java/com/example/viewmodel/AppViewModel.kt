@@ -46,7 +46,6 @@ sealed interface SessionScreen {
     data object DeveloperDashboard : SessionScreen
 }
 
-
 data class AppUiState(
     val screen: SessionScreen = SessionScreen.Login,
 
@@ -61,14 +60,14 @@ data class AppUiState(
     val biometricMessage: String? = null,
     val isLoggingIn: Boolean = false,
     val loginError: String? = null,
-        // Remote Developer Config, Live UI Config & Bug Reports state
+
+    // Remote Developer Config, Live UI Config & Bug Reports state
     val remoteAppConfig: RemoteAppConfig = RemoteAppConfig(),
     val remoteUiConfig: RemoteUiConfig = RemoteUiConfig(),
-    val bugReports: List> = emptyList(),
+    val bugReports: List<Map<String, String>> = emptyList(),
     val isUpdatingDeveloperConfig: Boolean = false,
     val developerFeedbackMessage: String? = null,
     val developerError: String? = null,
-    
 
     // In-App Self-Updater state
     val isCheckingUpdate: Boolean = false,
@@ -222,9 +221,7 @@ data class AppUiState(
     val lastEspTap: EspTapResult? = null,
     val espTapHistory: List<EspTapResult> = emptyList(),
     val espTapError: String? = null
-)
-
-class AppViewModel(
+)class AppViewModel(
     private val apiClient: AttendanceApiClient = AttendanceApiClient(),
     private val newsClient: TechnicalNewsClient = TechnicalNewsClient()
 ) : ViewModel() {
@@ -284,7 +281,25 @@ class AppViewModel(
     }
 
     fun clearSavedSession(context: Context) {
-            fun openDeveloperConsole(pin: String) {
+        SessionPreferences.clearAll(context)
+        BackgroundSyncConfig.clear(context)
+        BackgroundSyncScheduler.cancelAll(context)
+        _uiState.update {
+            it.copy(
+                rememberMe = false,
+                biometricEnabled = false,
+                hasSavedCredentials = false,
+                savedRoleLabel = "",
+                rollInput = "",
+                pinInput = "",
+                biometricMessage = "Saved login credentials cleared from this device."
+            )
+        }
+    }
+
+    // ---------- Developer Master Console, Live UI Config & Bug Reports ----------
+
+    fun openDeveloperConsole(pin: String) {
         if (pin.trim() != _uiState.value.remoteAppConfig.developerPin) {
             _uiState.update { it.copy(loginError = "Invalid Developer PIN.") }
             return
@@ -294,14 +309,20 @@ class AppViewModel(
         }
     }
 
-    fun updateRemoteAppConfig(updates: Map<String, String>) {
+    fun saveRemoteAppConfig(updates: Map<String, String>) {
+        val currentCfg = _uiState.value.remoteAppConfig
         val merged = mutableMapOf(
-            "developerPin" to _uiState.value.remoteAppConfig.developerPin,
-            "updaterEnabled" to _uiState.value.remoteAppConfig.updaterEnabled.toString(),
-            "instructorAccessEnabled" to _uiState.value.remoteAppConfig.instructorAccessEnabled.toString(),
-            "principalAccessEnabled" to _uiState.value.remoteAppConfig.principalAccessEnabled.toString(),
-            "maintenanceMode" to _uiState.value.remoteAppConfig.maintenanceMode.toString(),
-            "maintenanceBanner" to _uiState.value.remoteAppConfig.maintenanceBanner
+            "developerPin" to currentCfg.developerPin,
+            "updaterEnabled" to currentCfg.updaterEnabled.toString(),
+            "releaseUpdateToUsers" to currentCfg.releaseUpdateToUsers.toString(),
+            "instructorAccessEnabled" to currentCfg.instructorAccessEnabled.toString(),
+            "principalAccessEnabled" to currentCfg.principalAccessEnabled.toString(),
+            "maintenanceMode" to currentCfg.maintenanceMode.toString(),
+            "maintenanceBanner" to currentCfg.maintenanceBanner,
+            "examMarksEnabled" to currentCfg.examMarksEnabled.toString(),
+            "shopFloorEnabled" to currentCfg.shopFloorEnabled.toString(),
+            "undoEnabled" to currentCfg.undoEnabled.toString(),
+            "alertRepliesEnabled" to currentCfg.alertRepliesEnabled.toString()
         ).apply { putAll(updates) }
         _uiState.update {
             it.copy(
@@ -310,6 +331,8 @@ class AppViewModel(
             )
         }
     }
+
+    fun updateRemoteAppConfig(updates: Map<String, String>) = saveRemoteAppConfig(updates)
 
     fun saveRemoteUiConfig(updates: Map<String, String>, screen: String = "Global") {
         val merged = _uiState.value.remoteUiConfig.rawOverrides.toMutableMap().apply { putAll(updates) }
@@ -321,7 +344,13 @@ class AppViewModel(
         }
     }
 
-    fun submitBugReport(screenName: String, reportedBy: String, role: String, appVersion: String, description: String) {
+    fun submitBugReport(
+        screenName: String,
+        reportedBy: String,
+        role: String,
+        appVersion: String,
+        description: String
+    ) {
         val report = mapOf(
             "BugId" to "BUG-${System.currentTimeMillis()}",
             "ScreenName" to screenName,
@@ -345,31 +374,18 @@ class AppViewModel(
         }
     }
 
-    fun editSheetCell(tabName: String, rowIndex: Int, colName: String, newValue: String) {
+    fun editSheetRow(tabName: String, rowIndex: Int, colName: String, newValue: String) {
         _uiState.update {
             it.copy(developerFeedbackMessage = "Queued edit on $tabName row $rowIndex ($colName = $newValue).")
         }
     }
-    
-        SessionPreferences.clearAll(context)
-        BackgroundSyncConfig.clear(context)
-        BackgroundSyncScheduler.cancelAll(context)
-        _uiState.update {
-            it.copy(
-                rememberMe = false,
-                biometricEnabled = false,
-                hasSavedCredentials = false,
-                savedRoleLabel = "",
-                rollInput = "",
-                pinInput = "",
-                biometricMessage = "Saved login credentials cleared from this device."
-            )
-        }
-    }
+
+    fun editSheetCell(tabName: String, rowIndex: Int, colName: String, newValue: String) =
+        editSheetRow(tabName, rowIndex, colName, newValue)
 
     // ---------- In-App Self-Updater ----------
 
-        fun checkForAppUpdate(silentIfUpToDate: Boolean = false) {
+    fun checkForAppUpdate(silentIfUpToDate: Boolean = false) {
         if (!_uiState.value.remoteAppConfig.updaterEnabled) return
         if (_uiState.value.isCheckingUpdate) return
 
@@ -488,9 +504,8 @@ class AppViewModel(
         when (_uiState.value.screen) {
             SessionScreen.TraineeDashboard -> refreshTraineeDashboard()
             SessionScreen.ParentDashboard -> refreshParentDashboard()
-                            SessionScreen.StaffDashboard, SessionScreen.PrincipalDashboard -> refreshStaffDashboard()
-                SessionScreen.DeveloperDashboard, SessionScreen.Login -> Unit
-
+            SessionScreen.StaffDashboard, SessionScreen.PrincipalDashboard -> refreshStaffDashboard()
+            SessionScreen.DeveloperDashboard, SessionScreen.Login -> Unit
         }
     }
 
@@ -502,6 +517,8 @@ class AppViewModel(
             )
         }
     }
+
+    fun onRoleInputChanged(role: UserRole) = onRoleSelected(role)
 
     fun onRollInputChanged(value: String) {
         val digitsOnly = value.filter { it.isDigit() }.take(2)
@@ -516,7 +533,7 @@ class AppViewModel(
     fun login(context: Context? = null) {
         val current = _uiState.value
         if (current.isLoggingIn) return
-                if (current.pinInput.trim() == current.remoteAppConfig.developerPin) {
+        if (current.pinInput.trim() == current.remoteAppConfig.developerPin) {
             openDeveloperConsole(current.pinInput.trim())
             return
         }
@@ -526,7 +543,6 @@ class AppViewModel(
             }
             return
         }
-        
 
         when (current.selectedRole) {
             UserRole.TRAINEE -> {
@@ -559,15 +575,15 @@ class AppViewModel(
                 if (current.pinInput.isBlank()) {
                     _uiState.update { it.copy(loginError = "Please enter your Staff PIN.") }
                     return
-                }        if (current.selectedRole == UserRole.TRADE_INSTRUCTOR && !current.remoteAppConfig.instructorAccessEnabled) {
-            _uiState.update { it.copy(loginError = "Instructor (2025) admin access is currently shut down.") }
-            return
-        }
-        if (current.selectedRole == UserRole.PRINCIPAL && !current.remoteAppConfig.principalAccessEnabled) {
-            _uiState.update { it.copy(loginError = "Principal (9999) admin access is currently shut down.") }
-            return
-        }
-        
+                }
+                if (current.selectedRole == UserRole.TRADE_INSTRUCTOR && !current.remoteAppConfig.instructorAccessEnabled) {
+                    _uiState.update { it.copy(loginError = "Instructor (2025) admin access is currently shut down.") }
+                    return
+                }
+                if (current.selectedRole == UserRole.PRINCIPAL && !current.remoteAppConfig.principalAccessEnabled) {
+                    _uiState.update { it.copy(loginError = "Principal (9999) admin access is currently shut down.") }
+                    return
+                }
                 performStaffLogin(current.selectedRole, current.pinInput.trim(), context)
             }
         }
@@ -694,89 +710,8 @@ class AppViewModel(
 
     private fun performStaffLogin(role: UserRole, pin: String, context: Context?) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoggingIn = true, loginError = null, biometricMessage = null) }
-            when (val result = apiClient.fetchStaffData(pin = pin)) {
-                is ApiResult.Success -> {
-                    persistSessionAfterSuccess(context, role, "", pin)
-                    if (context != null) {
-                        AttendanceNotificationHelper.evaluateStaffPublishedUpdates(
-                            context = context,
-                            data = result.data,
-                            activeRole = role,
-                            seedBaselineOnly = true
-                        )
-                    }
-                    val officialList = if (result.data.timetable.isNotEmpty()) {
-                        if (context != null) {
-                            TimetableStore.saveOfficialCache(context, result.data.timetable, result.data.traineeTimetableEditEnabled)
-                        }
-                        result.data.timetable
-                    } else if (context != null) {
-                        TimetableStore.loadOfficialCache(context)
-                    } else {
-                        TimetableStore.defaultWeeklyTimetable()
-                    }
-                    val targetScreen = if (role == UserRole.PRINCIPAL) {
-                        SessionScreen.PrincipalDashboard
-                    } else {
-                        SessionScreen.StaffDashboard
-                    }
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoggingIn = false,
-                            screen = targetScreen,
-                            activeStaffRole = role,
-                            activePin = pin,
-                            hasSavedCredentials = state.rememberMe,
-                            staffData = result.data,
-                            officialTimetableCache = officialList,
-                            selectedStaffTab = StaffTab.ATTENDANCE_REGISTER,
-                            selectedPrincipalTab = PrincipalTab.SCORECARD,
-                            staffBannerError = null,
-                            closeAttendanceMessage = null,
-                            closeAttendanceError = null,
-                            rollCallFeedbackMessage = null,
-                            rollCallError = null,
-                            updatingLateGraceRoll = null,
-                            lateGraceMessage = null,
-                            lateGraceError = null,
-                            scanOverrideMessage = null,
-                            scanOverrideError = null,
-                            shopFloorActionMessage = null,
-                            shopFloorActionError = null,
-                            opsFeedbackMessage = null,
-                            opsError = null,
-                            dutyOverrideMessage = null,
-                            dutyOverrideError = null,
-                            timetableFeedbackMessage = null,
-                            timetableError = null,
-                            holidayPostMessage = null,
-                            holidayPostError = null,
-                            noticePostMessage = null,
-                            noticePostError = null,
-                            projectAccessMessage = null,
-                            projectAccessError = null,
-                            approvalSuccessMessage = null,
-                            approvalPdfUrl = null,
-                            approvalError = null,
-                            exportedPdfUrl = null,
-                            exportPdfError = null,
-                            lastEspTap = null,
-                            espTapError = null
-                        )
-                    }
-                }
-
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isLoggingIn = false, loginError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    // ---------- Trainee Operations ----------
+            _uiState.update { it.copy(isLoggingIn = true, loginError = 
+                    // ---------- Trainee Operations ----------
 
     fun onTraineeTabSelected(tab: TraineeTab, context: Context) {
         _uiState.update { it.copy(selectedTraineeTab = tab) }
@@ -1078,6 +1013,8 @@ class AppViewModel(
         _uiState.update { it.copy(workQueryMessage = null, workQueryError = null) }
     }
 
+    fun dismissTraineeWorkMarkQueryFeedback() = dismissWorkQueryFeedback()
+
     fun submitTraineeRunningLateAlert(
         expectedArrival: String,
         reasonCategory: String,
@@ -1131,6 +1068,8 @@ class AppViewModel(
     fun dismissRunningLateFeedback() {
         _uiState.update { it.copy(runningLateMessage = null, runningLateError = null) }
     }
+
+    fun dismissTraineeRunningLateAlertFeedback() = dismissRunningLateFeedback()
 
     // ---------- Parent Operations ----------
 
@@ -1265,12 +1204,15 @@ class AppViewModel(
         }
     }
 
+    fun refreshPrincipalDashboard() = refreshStaffDashboard()
+
     fun evaluateInstructorUrgentNotifications(context: Context) {
         val data = _uiState.value.staffData ?: return
         AttendanceNotificationHelper.notifyInstructorUrgentAlertsIfNeeded(context, data)
     }
 
-    // ---------- Instructor Scan Overrides (Early Dismissal & Shop Floor Release) ----------
+    fun evaluateInstructorNotifications(context: Context) = evaluateInstructorUrgentNotifications(context)
+    // ---------- Instructor Scan Overrides & Shop Floor ----------
 
     fun toggleEarlyClassLogoutOverride(enabled: Boolean) {
         val current = _uiState.value
@@ -1279,12 +1221,16 @@ class AppViewModel(
         updateScanOverrides(earlyClassLogout = enabled, shopFloorReleaseNow = currentShopRelease)
     }
 
+    fun toggleEarlyClassLogout(enabled: Boolean) = toggleEarlyClassLogoutOverride(enabled)
+
     fun toggleShopFloorReleaseNowOverride(enabled: Boolean) {
         val current = _uiState.value
         if (current.isUpdatingScanOverride) return
         val currentEarlyClass = current.staffData?.scanOverrides?.earlyClassLogoutEnabled ?: false
         updateScanOverrides(earlyClassLogout = currentEarlyClass, shopFloorReleaseNow = enabled)
     }
+
+    fun toggleShopFloorReleaseNow(enabled: Boolean) = toggleShopFloorReleaseNowOverride(enabled)
 
     private fun updateScanOverrides(earlyClassLogout: Boolean, shopFloorReleaseNow: Boolean) {
         val current = _uiState.value
@@ -1318,11 +1264,9 @@ class AppViewModel(
         }
     }
 
-    // ---------- Shop Floor Roster Management & Card Logout Verification ----------
-
     fun updateShopFloorMember(
         roll: String,
-        operation: String, // "ADD" or "REMOVE"
+        operation: String,
         sessionType: String = "POST_3PM",
         scheduledEndTime: String = "05:00 PM"
     ) {
@@ -1393,6 +1337,8 @@ class AppViewModel(
         }
     }
 
+    fun recordShopFloorCardLogout(roll: String) = triggerShopFloorCardLogout(roll)
+
     fun verifyShopFloorLogout(roll: String, date: String) {
         val current = _uiState.value
         if (current.isUpdatingShopFloor) return
@@ -1420,7 +1366,7 @@ class AppViewModel(
         }
     }
 
-    // ---------- Bulk Morning Roll Call, Quick Exceptions & Instant Parent Alert ----------
+    // ---------- Bulk Morning Roll Call, Quick Exceptions & Undo ----------
 
     fun runBulkMorningRollCall(status: String = "PRESENT") {
         val current = _uiState.value
@@ -1449,15 +1395,17 @@ class AppViewModel(
         }
     }
 
+    fun bulkMorningRollCall() = runBulkMorningRollCall("PRESENT")
+
+    fun bulkMorningRollCall(status: String) = runBulkMorningRollCall(status)
+
     fun markTraineeException(roll: String, exceptionType: String) {
         requestManualAttendancePunch(roll = roll, status = exceptionType, bypassDuplicateGuard = false)
     }
 
-    /**
-     * Trade Instructor Front-Panel Quick Manual Punch (PRESENT / LATE / HALF-DAY / ABSENT / ON-DUTY)
-     * Enforces one punch per student per day by default; if already punched today, surfaces an explicit
-     * "Mark again (by mistake)" confirmation prompt before overriding.
-     */
+    fun markAttendanceException(roll: String, exceptionType: String) =
+        markTraineeException(roll, exceptionType)
+
     fun requestManualAttendancePunch(
         roll: String,
         status: String,
@@ -1497,6 +1445,12 @@ class AppViewModel(
         )
     }
 
+    fun manualAttendancePunch(roll: String, status: String) =
+        requestManualAttendancePunch(roll, status, false)
+
+    fun manualAttendancePunch(roll: String, status: String, bypassDuplicateGuard: Boolean) =
+        requestManualAttendancePunch(roll, status, bypassDuplicateGuard)
+
     fun confirmDuplicateManualPunchOverride() {
         val prompt = _uiState.value.duplicatePunchPrompt ?: return
         _uiState.update { it.copy(duplicatePunchPrompt = null) }
@@ -1507,9 +1461,13 @@ class AppViewModel(
         )
     }
 
+    fun confirmDuplicatePunch() = confirmDuplicateManualPunchOverride()
+
     fun dismissDuplicatePunchPrompt() {
         _uiState.update { it.copy(duplicatePunchPrompt = null) }
     }
+
+    fun dismissDuplicatePunch() = dismissDuplicatePunchPrompt()
 
     private fun executeManualAttendancePunch(
         roll: String,
@@ -1592,10 +1550,6 @@ class AppViewModel(
         }
     }
 
-    /**
-     * Reverts the most recent manual punch / status / late change for the given roll cleanly
-     * with server sync and local rollback state cleanup.
-     */
     fun undoRecentAttendanceChange(roll: String) {
         val current = _uiState.value
         if (current.undoingRoll != null || current.isRunningRollCallOp || current.activePin.isBlank()) return
@@ -1666,10 +1620,8 @@ class AppViewModel(
         }
     }
 
-    /**
-     * Resets any punched trainee row (PRESENT / HALF DAY / LATE / ON-DUTY / has IN or OUT time)
-     * directly back to ABSENT for today from either the Trade Instructor or Principal register.
-     */
+    fun undoAttendanceAction(roll: String) = undoRecentAttendanceChange(roll)
+
     fun resetTraineeAttendanceToAbsent(roll: String, studentName: String) {
         val current = _uiState.value
         if (current.undoingRoll != null || current.isRunningRollCallOp || current.activePin.isBlank()) return
@@ -1681,7 +1633,6 @@ class AppViewModel(
 
         viewModelScope.launch {
             _uiState.update { state ->
-                // Optimistically clear the row immediately so UI feels crisp
                 val optimisticStaff = state.staffData?.let { sd ->
                     sd.copy(
                         allAttendance = sd.allAttendance.map { rec ->
@@ -1731,19 +1682,7 @@ class AppViewModel(
                 }
                 is ApiResult.Error -> {
                     _uiState.update {
-                        it.copy(
-                            undoingRoll = null,
-                            isRunningRollCallOp = false,
-                            rollCallError = "Undo failed for Roll #$cleanRoll: ${result.message}"
-                        )
-                    }
-                    refreshStaffDashboard()
-                }
-            }
-        }
-    }
-
-    // ---------- Theory Notes & Lab Log Book Submission & Verification ----------
+             // ---------- Theory Notes & Lab Log Book Submission & Verification ----------
 
     fun submitTraineeAcademicRecord(
         theoryTopic: String,
@@ -1842,6 +1781,8 @@ class AppViewModel(
         }
     }
 
+    fun refreshAcademicSubmissions() = refreshStaffAcademicSubmissions()
+
     fun verifyAcademicSubmission(
         roll: String,
         submissionId: String,
@@ -1933,9 +1874,17 @@ class AppViewModel(
         }
     }
 
+    fun forwardSingleAcademicToPrincipal(roll: String) =
+        forwardAcademicSubmissionToPrincipal(roll = roll, bulkAllVerified = false)
+
+    fun forwardAllVerifiedAcademicToPrincipal() =
+        forwardAcademicSubmissionToPrincipal(roll = "", bulkAllVerified = true)
+
     fun dismissAcademicFeedback() {
         _uiState.update { it.copy(academicActionMessage = null, academicActionError = null) }
     }
+
+    fun dismissTraineeAcademicFeedback() = dismissAcademicFeedback()
 
     fun setTraineeLateGrace(
         roll: String,
@@ -1987,6 +1936,12 @@ class AppViewModel(
             }
         }
     }
+
+    fun setLateGraceForTrainee(roll: String, mode: String, cutoff: String = "", note: String = "") =
+        setTraineeLateGrace(roll, mode, cutoff, note)
+
+    fun setLateGraceForTrainee(roll: String, mode: String) =
+        setTraineeLateGrace(roll, mode)
 
     fun dismissLateGraceFeedback() {
         _uiState.update { it.copy(lateGraceMessage = null, lateGraceError = null) }
@@ -2066,6 +2021,24 @@ class AppViewModel(
             }
         }
     }
+
+    fun saveMonthlyMark(
+        markId: String,
+        roll: String,
+        monthLabel: String,
+        examDate: String,
+        theoryMarks: Int,
+        theoryMax: Int,
+        labMarks: Int,
+        labMax: Int,
+        remarks: String,
+        publish: Boolean,
+        notifyParent: Boolean,
+        onSuccessReset: () -> Unit
+    ) = saveMonthlyExamMark(
+        markId, roll, monthLabel, examDate, theoryMarks, theoryMax,
+        labMarks, labMax, remarks, publish, notifyParent, onSuccessReset
+    )
 
     fun dismissMonthlyMarkFeedback() {
         _uiState.update { it.copy(monthlyMarkMessage = null, monthlyMarkError = null) }
@@ -2179,6 +2152,9 @@ class AppViewModel(
         }
     }
 
+    fun signOffDuty(date: String, pairLabel: String, note: String, onSuccessReset: () -> Unit) =
+        signOffDailyDuty(date, pairLabel, note, onSuccessReset)
+
     fun logToolCribIssue(
         itemName: String,
         conditionStatus: String,
@@ -2220,555 +2196,13 @@ class AppViewModel(
         }
     }
 
+    fun logToolCribItem(itemName: String, conditionStatus: String, notes: String, onSuccessReset: () -> Unit) =
+        logToolCribIssue(itemName, conditionStatus, notes, onSuccessReset)
+
     // ---------- Confirm & Close, Holidays, Notices, Project Groups, Approvals ----------
 
     fun confirmAndCloseTodayAttendance() {
         val current = _uiState.value
         if (current.isClosingAttendance) return
-        val targetDate = current.staffData?.attendanceDate
-            ?.takeIf { it.isNotBlank() }
-            ?: AttendanceApiClient.todayIstDateString()
-
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(isClosingAttendance = true, closeAttendanceMessage = null, closeAttendanceError = null)
-            }
-            when (val result = apiClient.confirmCloseAttendance(pin = current.activePin, date = targetDate)) {
-                is ApiResult.Success -> {
-                    _uiState.update { state ->
-                        val updatedStaff = state.staffData?.copy(
-                            attendanceClosed = result.data.attendanceClosed,
-                            attendanceDate = result.data.date,
-                            closedAt = result.data.closedAt
-                        )
-                        state.copy(
-                            isClosingAttendance = false,
-                            staffData = updatedStaff,
-                            closeAttendanceMessage = result.data.message,
-                            closeAttendanceError = null
-                        )
-                    }
-                    refreshStaffDashboard()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isClosingAttendance = false, closeAttendanceError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun dismissCloseAttendanceFeedback() {
-        _uiState.update { it.copy(closeAttendanceMessage = null, closeAttendanceError = null) }
-    }
-
-    fun postHolidayAnnouncement(date: String, reason: String, onSuccessReset: () -> Unit) {
-        val current = _uiState.value
-        if (current.isPostingHoliday) return
-        val cleanDate = date.trim().ifBlank { AttendanceApiClient.todayIstDateString() }
-        if (reason.isBlank()) {
-            _uiState.update { it.copy(holidayPostError = "Enter a holiday reason (English, Manglish, or മലയാളം).") }
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(isPostingHoliday = true, holidayPostMessage = null, holidayPostError = null)
-            }
-            when (val result = apiClient.postHoliday(pin = current.activePin, date = cleanDate, reason = reason)) {
-                is ApiResult.Success -> {
-                    onSuccessReset()
-                    _uiState.update { state ->
-                        val updatedStaff = state.staffData?.let { sd ->
-                            val isToday = result.data.holiday.date.equals(
-                                sd.attendanceDate.ifBlank { AttendanceApiClient.todayIstDateString() },
-                                ignoreCase = true
-                            )
-                            sd.copy(
-                                todayHoliday = if (isToday) result.data.holiday else sd.todayHoliday,
-                                holidays = listOf(result.data.holiday) +
-                                    sd.holidays.filterNot { it.date == result.data.holiday.date }
-                            )
-                        }
-                        state.copy(
-                            isPostingHoliday = false,
-                            staffData = updatedStaff,
-                            holidayPostMessage = result.data.message,
-                            holidayPostError = null
-                        )
-                    }
-                    refreshStaffDashboard()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isPostingHoliday = false, holidayPostError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun postTradeNotice(
-        title: String,
-        category: String,
-        body: String,
-        pinned: Boolean = false,
-        onSuccessReset: () -> Unit
-    ) {
-        val current = _uiState.value
-        if (current.isPostingNotice) return
-        if (title.isBlank()) {
-            _uiState.update { it.copy(noticePostError = "Please enter a notice title.") }
-            return
-        }
-        if (body.isBlank()) {
-            _uiState.update { it.copy(noticePostError = "Please enter the notice message body.") }
-            return
-        }
-
-        val author = if (current.activeStaffRole == UserRole.PRINCIPAL) {
-            "Principal, Govt. ITI Ranni"
-        } else {
-            "Trade Instructor (EM)"
-        }
-
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(isPostingNotice = true, noticePostMessage = null, noticePostError = null)
-            }
-            when (
-                val result = apiClient.postNotice(
-                    pin = current.activePin,
-                    title = title,
-                    category = category,
-                    body = body,
-                    pinned = pinned,
-                    postedBy = author
-                )
-            ) {
-                is ApiResult.Success -> {
-                    onSuccessReset()
-                    _uiState.update { state ->
-                        val updatedStaff = state.staffData?.let { sd ->
-                            sd.copy(
-                                notices = listOf(result.data.notice) +
-                                    sd.notices.filterNot { it.id == result.data.notice.id },
-                                pinnedBroadcast = if (pinned) result.data.notice else sd.pinnedBroadcast
-                            )
-                        }
-                        state.copy(
-                            isPostingNotice = false,
-                            staffData = updatedStaff,
-                            noticePostMessage = result.data.message,
-                            noticePostError = null
-                        )
-                    }
-                    refreshStaffDashboard()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isPostingNotice = false, noticePostError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun toggleProjectGroupsAccess(enabled: Boolean) {
-        val current = _uiState.value
-        if (current.isTogglingProjectAccess) return
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(isTogglingProjectAccess = true, projectAccessMessage = null, projectAccessError = null)
-            }
-            when (val result = apiClient.setProjectGroupsAccess(pin = current.activePin, enabled = enabled)) {
-                is ApiResult.Success -> {
-                    _uiState.update { state ->
-                        state.copy(
-                            isTogglingProjectAccess = false,
-                            staffData = state.staffData?.copy(projectGroupsEnabled = result.data.enabled),
-                            projectAccessMessage = result.data.message,
-                            projectAccessError = null
-                        )
-                    }
-                    refreshProjectGroupsForStaff()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isTogglingProjectAccess = false, projectAccessError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun refreshProjectGroupsForStaff() {
-        val current = _uiState.value
-        if (current.activePin.isBlank()) return
-        viewModelScope.launch {
-            when (val result = apiClient.fetchProjectGroups(pin = current.activePin)) {
-                is ApiResult.Success -> {
-                    _uiState.update { state ->
-                        val existing = state.staffData ?: return@update state
-                        state.copy(
-                            staffData = existing.copy(
-                                projectGroupsEnabled = result.data.enabled,
-                                projectGroups = result.data.groups
-                            )
-                        )
-                    }
-                }
-                is ApiResult.Error -> Unit
-            }
-        }
-    }
-
-    fun approveAndSignLeave(reqId: String, signature: String) {
-        val current = _uiState.value
-        if (current.signingReqId != null) return
-        if (signature.isBlank()) {
-            _uiState.update { it.copy(approvalError = "Please draw or type your digital signature before approving.") }
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(signingReqId = reqId, approvalError = null, approvalSuccessMessage = null, approvalPdfUrl = null)
-            }
-
-            val result = if (current.activeStaffRole == UserRole.PRINCIPAL) {
-                apiClient.signByPrincipal(pin = current.activePin, reqId = reqId, principalSig = signature)
-            } else {
-                apiClient.signByInstructor(pin = current.activePin, reqId = reqId, sirSig = signature)
-            }
-
-            when (result) {
-                is ApiResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            signingReqId = null,
-                            approvalSuccessMessage = result.data.message,
-                            approvalPdfUrl = result.data.pdfUrl.ifBlank { null },
-                            approvalError = null
-                        )
-                    }
-                    refreshStaffDashboard()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(signingReqId = null, approvalError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun rejectLeaveRequest(reqId: String, reason: String) {
-        val current = _uiState.value
-        if (current.signingReqId != null) return
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(signingReqId = reqId, approvalError = null, approvalSuccessMessage = null)
-            }
-            when (val result = apiClient.rejectLeaveRequest(current.activePin, reqId, reason.ifBlank { "Not approved by Principal" })) {
-                is ApiResult.Success -> {
-                    _uiState.update {
-                        it.copy(signingReqId = null, approvalSuccessMessage = result.data.message, approvalError = null)
-                    }
-                    refreshStaffDashboard()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(signingReqId = null, approvalError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun dismissApprovalFeedback() {
-        _uiState.update {
-            it.copy(approvalSuccessMessage = null, approvalPdfUrl = null, approvalError = null)
-        }
-    }
-
-    fun onRegisterSearchChanged(query: String) {
-        _uiState.update { it.copy(registerSearchQuery = query) }
-    }
-
-    fun onRegisterStatusFilterChanged(filter: String) {
-        _uiState.update { it.copy(registerStatusFilter = filter) }
-    }
-
-    fun exportDailyAttendancePdf(onPdfReady: (String) -> Unit) {
-        val current = _uiState.value
-        if (current.isExportingPdf) return
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(isExportingPdf = true, exportPdfError = null, exportedPdfUrl = null)
-            }
-            when (val result = apiClient.exportDailyAttendancePdf(current.activePin)) {
-                is ApiResult.Success -> {
-                    val url = result.data.pdfUrl
-                    _uiState.update {
-                        it.copy(
-                            isExportingPdf = false,
-                            exportedPdfUrl = url.ifBlank { null },
-                            exportPdfError = if (url.isBlank()) "Server did not return a PDF link." else null
-                        )
-                    }
-                    if (url.isNotBlank()) onPdfReady(url)
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isExportingPdf = false, exportPdfError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun onEspRollInputChanged(value: String) {
-        val digitsOnly = value.filter { it.isDigit() }.take(2)
-        _uiState.update { it.copy(espRollInput = digitsOnly, espTapError = null) }
-    }
-
-    fun triggerManualEspTap() {
-        val current = _uiState.value
-        if (current.isTappingEsp) return
-        val rollNum = current.espRollInput.toIntOrNull()
-        if (rollNum == null || rollNum !in 1..DutyRotationEngine.TOTAL_TRAINEES) {
-            _uiState.update { it.copy(espTapError = "Enter a valid trainee Roll Number (1–23).") }
-            return
-        }
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isTappingEsp = true, espTapError = null) }
-            when (val result = apiClient.triggerEspTap(rollNum.toString())) {
-                is ApiResult.Success -> {
-                    _uiState.update { state ->
-                        state.copy(
-                            isTappingEsp = false,
-                            lastEspTap = result.data,
-                            espTapHistory = listOf(result.data) + state.espTapHistory.take(9),
-                            espTapError = null
-                        )
-                    }
-                    refreshStaffDashboard()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isTappingEsp = false, espTapError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    // ---------- Instructor Live Duty Override (Rolls 1–23) ----------
-
-    fun saveDutyOverride(
-        dateKey: String,
-        firstRoll: Int,
-        secondRoll: Int,
-        dutyNote: String,
-        reanchorFromHere: Boolean,
-        resetToAuto: Boolean = false
-    ) {
-        val current = _uiState.value
-        if (current.isSavingDutyOverride || current.activePin.isBlank()) return
-        if (!resetToAuto && (firstRoll !in 1..DutyRotationEngine.TOTAL_TRAINEES || secondRoll !in 1..DutyRotationEngine.TOTAL_TRAINEES)) {
-            _uiState.update { it.copy(dutyOverrideError = "Please select valid trainee Roll Numbers (1–23).") }
-            return
-        }
-        val cleanDate = dateKey.trim().ifBlank { DutyRotationEngine.todayDutyDateKey() }
-
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(isSavingDutyOverride = true, dutyOverrideMessage = null, dutyOverrideError = null)
-            }
-            when (
-                val result = apiClient.saveDutyOverride(
-                    pin = current.activePin,
-                    dateKey = cleanDate,
-                    firstRoll = firstRoll,
-                    secondRoll = secondRoll,
-                    dutyNote = dutyNote,
-                    reanchorFromHere = reanchorFromHere,
-                    resetToAuto = resetToAuto
-                )
-            ) {
-                is ApiResult.Success -> {
-                    // Optimistic update on local StaffDashboardData + background refresh
-                    _uiState.update { state ->
-                        val updatedStaff = state.staffData?.let { sd ->
-                            val newMap = sd.dutyOverrides.toMutableMap()
-                            if (resetToAuto) {
-                                newMap.remove(cleanDate)
-                            } else {
-                                newMap[cleanDate] = DutyOverrideEntry(
-                                    dateKey = cleanDate,
-                                    firstRoll = firstRoll,
-                                    secondRoll = secondRoll,
-                                    dutyNote = dutyNote.trim(),
-                                    reanchorFromHere = reanchorFromHere,
-                                    updatedBy = state.activeStaffRole.displayName
-                                )
-                            }
-                            sd.copy(dutyOverrides = newMap)
-                        }
-                        state.copy(
-                            isSavingDutyOverride = false,
-                            staffData = updatedStaff,
-                            dutyOverrideMessage = result.data.message,
-                            dutyOverrideError = null
-                        )
-                    }
-                    refreshStaffDashboard()
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isSavingDutyOverride = false, dutyOverrideError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun dismissDutyOverrideFeedback() {
-        _uiState.update { it.copy(dutyOverrideMessage = null, dutyOverrideError = null) }
-    }
-
-    // ---------- Editable Weekly Timetable (Trainee Local + Shared Sheet / Instructor CRUD) ----------
-
-    fun saveTraineeLocalTimetable(context: Context, periods: List<TimetablePeriod>) {
-        val roll = _uiState.value.activeRoll
-        TimetableStore.saveTraineeCustomEdits(context, roll, periods)
-        _uiState.update {
-            it.copy(
-                traineeCustomTimetable = periods,
-                timetableFeedbackMessage = "Saved to My Custom Edits on this device.",
-                timetableError = null
-            )
-        }
-    }
-
-    fun resetTraineeTimetableToOfficial(context: Context) {
-        val roll = _uiState.value.activeRoll
-        TimetableStore.clearTraineeCustomEdits(context, roll)
-        _uiState.update {
-            it.copy(
-                traineeCustomTimetable = null,
-                timetableFeedbackMessage = "Timetable reset to Official EMech Schedule.",
-                timetableError = null
-            )
-        }
-    }
-
-    fun submitTraineeSharedTimetable(context: Context, periods: List<TimetablePeriod>) {
-        val current = _uiState.value
-        if (current.isSavingTimetable || current.activeRoll.isBlank()) return
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(isSavingTimetable = true, timetableFeedbackMessage = null, timetableError = null)
-            }
-            when (
-                val result = apiClient.saveTimetable(
-                    pin = current.activePin,
-                    roll = current.activeRoll,
-                    periods = periods,
-                    traineeTimetableEditEnabled = null,
-                    isTraineeEdit = true
-                )
-            ) {
-                is ApiResult.Success -> {
-                    TimetableStore.saveOfficialCache(
-                        context,
-                        periods,
-                        current.traineeData?.traineeTimetableEditEnabled ?: true
-                    )
-                    TimetableStore.clearTraineeCustomEdits(context, current.activeRoll)
-                    _uiState.update { state ->
-                        state.copy(
-                            isSavingTimetable = false,
-                            officialTimetableCache = periods,
-                            traineeCustomTimetable = null,
-                            traineeData = state.traineeData?.copy(timetable = periods),
-                            timetableFeedbackMessage = result.data.message,
-                            timetableError = null
-                        )
-                    }
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isSavingTimetable = false, timetableError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun publishOfficialTimetable(
-        context: Context,
-        periods: List<TimetablePeriod>,
-        allowTraineeEdit: Boolean
-    ) {
-        val current = _uiState.value
-        if (current.isSavingTimetable || current.activePin.isBlank()) return
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(isSavingTimetable = true, timetableFeedbackMessage = null, timetableError = null)
-            }
-            when (
-                val result = apiClient.saveTimetable(
-                    pin = current.activePin,
-                    roll = "",
-                    periods = periods,
-                    traineeTimetableEditEnabled = allowTraineeEdit,
-                    isTraineeEdit = false
-                )
-            ) {
-                is ApiResult.Success -> {
-                    TimetableStore.saveOfficialCache(context, periods, allowTraineeEdit)
-                    _uiState.update { state ->
-                        state.copy(
-                            isSavingTimetable = false,
-                            officialTimetableCache = periods,
-                            staffData = state.staffData?.copy(
-                                timetable = periods,
-                                traineeTimetableEditEnabled = allowTraineeEdit
-                            ),
-                            timetableFeedbackMessage = result.data.message,
-                            timetableError = null
-                        )
-                    }
-                }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(isSavingTimetable = false, timetableError = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    fun dismissTimetableFeedback() {
-        _uiState.update { it.copy(timetableFeedbackMessage = null, timetableError = null) }
-    }
-
-    fun logout() {
-        val prev = _uiState.value
-        _uiState.update {
-            AppUiState(
-                selectedRole = prev.selectedRole,
-                rollInput = if (prev.rememberMe) prev.rollInput else "",
-                pinInput = if (prev.rememberMe) prev.pinInput else "",
-                rememberMe = prev.rememberMe,
-                biometricEnabled = prev.biometricEnabled,
-                hasSavedCredentials = prev.hasSavedCredentials,
-                savedRoleLabel = prev.savedRoleLabel
-            )
-        }
-    }
-}
+        val targetDate =
+                    
