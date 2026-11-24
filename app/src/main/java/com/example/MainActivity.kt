@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.ActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -20,7 +21,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -91,20 +92,22 @@ fun AppRoot(
     viewModel: AppViewModel
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val context: Context = LocalContext.current
 
-    var hasNotificationPermission by remember(context) {
-        mutableStateOf(checkPostNotificationPermission(context))
+    val notifState: MutableState<Boolean> = remember<MutableState<Boolean>>(context) {
+        mutableStateOf<Boolean>(checkPostNotificationPermission(context))
     }
+    var hasNotificationPermission: Boolean by notifState
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasNotificationPermission = granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-        if (hasNotificationPermission) {
-            AttendanceNotificationHelper.ensureChannels(context)
+    val notificationPermissionLauncher: ActivityResultLauncher<String> =
+        rememberLauncherForActivityResult<String, Boolean>(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { granted: Boolean ->
+            hasNotificationPermission = granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+            if (hasNotificationPermission) {
+                AttendanceNotificationHelper.ensureChannels(context)
+            }
         }
-    }
 
     LaunchedEffect(Unit) {
         if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -112,11 +115,11 @@ fun AppRoot(
         }
     }
 
-    val biometricAvailable = remember(context) {
+    val biometricAvailable: Boolean = remember<Boolean>(context) {
         BiometricAuthHelper.isBiometricAvailable(context)
     }
 
-    val triggerFingerprintUnlock = remember(activity, viewModel) {
+    val triggerFingerprintUnlock: () -> Unit = remember<() -> Unit>(activity, viewModel) {
         {
             val state = viewModel.uiState.value
             val label = state.savedRoleLabel.ifBlank { state.selectedRole.displayName }
@@ -147,7 +150,7 @@ fun AppRoot(
     val remoteAppConfig: RemoteAppConfig = uiState.remoteAppConfig
     val remoteUiConfig: RemoteUiConfig = uiState.remoteUiConfig
     val bugList: List> = uiState.bugReports
-    val packageVersionName: String = remember(context) {
+    val packageVersionName: String = remember<String>(context) {
         try {
             val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.packageManager.getPackageInfo(
@@ -163,7 +166,10 @@ fun AppRoot(
             "1.0"
         }
     }
-        var showDeveloperPanel by remember { mutableStateOf(false) }
+        val devPanelState: MutableState<Boolean> = remember<MutableState<Boolean>> {
+        mutableStateOf<Boolean>(false)
+    }
+    var showDeveloperPanel: Boolean by devPanelState
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -318,10 +324,10 @@ private fun RenderSessionScreens(
     biometricAvailable: Boolean,
     triggerFingerprintUnlock: () -> Unit
 ) {
-    val context = LocalContext.current
+    val context: Context = LocalContext.current
     Crossfade(
         targetState = uiState.screen,
-        animationSpec = tween(durationMillis = 240),
+        animationSpec = tween<Float>(durationMillis = 240),
         label = "session_screen_transition",
         modifier = Modifier.fillMaxSize()
     ) { screen ->
