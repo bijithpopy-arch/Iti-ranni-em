@@ -146,11 +146,14 @@ data class DutyOverrideEntry(
 )
 
 data class DutyPairSlot(
+    val dayNumber: Int = 1,
+    val rolls: List<Int> = emptyList(),
+    val dateLabel: String = "",
     val dateKey: String = "",
-    val firstRoll: Int = 1,
-    val secondRoll: Int = 2,
-    val label: String = "",
-    val isOverride: Boolean = false
+    val isToday: Boolean = false,
+    val dutyItems: List<String> = emptyList(),
+    val isOverridden: Boolean = false,
+    val dutyNote: String = ""
 )
 
 data class MonthlyExamMark(
