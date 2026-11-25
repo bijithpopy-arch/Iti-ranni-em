@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import com.example.updater.AppReleaseInfo
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -77,30 +79,55 @@ import com.example.viewmodel.AppUiState
 import com.example.viewmodel.AppViewModel
 import com.example.viewmodel.SessionScreen
 
+import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
+
 class MainActivity : FragmentActivity() {
     private val viewModel: AppViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        AttendanceNotificationHelper.ensureChannels(this)
-        OfflineSyncQueue.getAll(this)
+        val prevHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, ex ->
+            try {
+                val sw = StringWriter()
+                ex.printStackTrace(PrintWriter(sw))
+                val outDir = getExternalFilesDir(null) ?: filesDir
+                File(outDir, "crash_trace.txt").writeText("Thread: ${t.name}\n$sw")
+            } catch (_: Exception) {}
+            prevHandler?.uncaughtException(t, ex)
+        }
+        try { enableEdgeToEdge() } catch (_: Exception) {}
+        try { AttendanceNotificationHelper.ensureChannels(this) } catch (_: Exception) {}
+        try { OfflineSyncQueue.getAll(this) } catch (_: Exception) {}
 
         setContent {
+        val appCtx = androidx.compose.ui.platform.LocalContext.current
+        androidx.compose.runtime.LaunchedEffect(Unit) { com.example.ui.screens.InaugurationController.load(appCtx) }
+        var rootDevOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+        androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
             ItiRanniTheme {
-                AppRoot(activity = this, viewModel = viewModel)
+                AppRoot(activity = this@MainActivity, viewModel = viewModel)
             }
+            if (com.example.ui.screens.InaugurationController.isAppLocked()) {
+                com.example.ui.screens.InaugurationLockGate { rootDevOpen = true }
+            }
+            if (rootDevOpen) {
+                com.example.ui.screens.DevInaugurationConsoleDialog { rootDevOpen = false }
+            }
+            com.example.ui.screens.InaugurationFireworksOverlay()
         }
     }
 }
 
 private object BiometricAuthHelper {
-    fun isBiometricAvailable(context: Context): Boolean {
+    fun isBiometricAvailable(context: Context): Boolean = try {
         val manager = BiometricManager.from(context)
         val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
             BiometricManager.Authenticators.BIOMETRIC_WEAK
-        return manager.canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
-    }
+        manager.canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
+    } catch (_: Exception) { false }
 
     fun showFingerprintPrompt(
         activity: FragmentActivity,
@@ -160,7 +187,7 @@ fun AppRoot(
 
     LaunchedEffect(Unit) {
         if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            // REMOVED_CRASH_LINE // notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
@@ -180,10 +207,15 @@ fun AppRoot(
     }
 
     LaunchedEffect(Unit) {
-        val shouldAutoBiometric = viewModel.loadSavedSessionIfNeeded(context)
-        if (biometricAvailable && shouldAutoBiometric) triggerFingerprintUnlock()
-        val cfg = viewModel.uiState.value.remoteAppConfig
-        if (cfg.updaterEnabled && cfg.releaseUpdateToUsers) viewModel.checkForAppUpdate(silentIfUpToDate = true)
+        try {
+            viewModel.loadSavedSessionIfNeeded(context)
+            val savedSession = viewModel.uiState.value
+            if (biometricAvailable && savedSession.biometricEnabled && savedSession.hasSavedCredentials) triggerFingerprintUnlock()
+            val cfg = viewModel.uiState.value.remoteAppConfig
+            if (cfg.updaterEnabled && cfg.releaseUpdateToUsers) viewModel.checkForAppUpdate(silentIfUpToDate = true)
+        } catch (_: Exception) {}
+        val savedSession = viewModel.uiState.value
+        if (biometricAvailable && savedSession.biometricEnabled && savedSession.hasSavedCredentials) triggerFingerprintUnlock()
     }
 
     val remoteAppConfig: RemoteAppConfig = uiState.remoteAppConfig
@@ -250,7 +282,7 @@ fun AppRoot(
         AlertDialog(
             onDismissRequest = viewModel::dismissUpdateDialog,
             title = {
-                Text(if (upd != null) "Update v${upd.versionName} Available" else "App Update Status", fontWeight = FontWeight.Bold)
+                Text(if (upd != null) "Update v${(upd as? AppReleaseInfo)?.versionName.orEmpty()} Available" else "App Update Status", fontWeight = FontWeight.Bold)
             },
             text = {
                 Text(
@@ -308,17 +340,17 @@ fun AppRoot(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
-                            if (showDeveloperPanel) {
-                                showDeveloperPanel = false
-                            } else {
-                                secretTapCount++
-                                if (secretTapCount >= 5) {
-                                    secretTapCount = 0
-                                    showDevPinDialog = true
+                                if (showDeveloperPanel) {
+                                    showDeveloperPanel = false
+                                } else {
+                                    secretTapCount++
+                                    if (secretTapCount >= 5) {
+                                        secretTapCount = 0
+                                        showDevPinDialog = true
+                                    }
                                 }
                             }
-                        }
-                )
+                        )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ReportBugButtonAndDialog(
@@ -327,7 +359,7 @@ fun AppRoot(
                         role = uiState.selectedRole.displayName,
                         appVersion = packageVersionName,
                         visible = remoteUiConfig.showReportBugButton,
-                        onSubmitBug = viewModel::submitBugReport
+                        onSubmitBug = { sName, by, r, ver, desc -> viewModel.submitBugReport(sName, by, r, ver, desc) }
                     )
                     if (showDeveloperPanel) {
                         TextButton(onClick = { showDeveloperPanel = false }) {
@@ -346,7 +378,7 @@ fun AppRoot(
                         onSaveAppConfig = viewModel::saveRemoteAppConfig,
                         onSaveUiConfig = viewModel::saveRemoteUiConfig,
                         onResolveBug = viewModel::resolveBugReport,
-                        onEditAnySheetRow = viewModel::editSheetRow
+                        onEditAnySheetRow = { tab, row, col, valStr -> viewModel.editSheetRow(tab, row, col, valStr) }
                     )
                 }
             } else if (remoteAppConfig.maintenanceMode && uiState.screen != SessionScreen.DeveloperDashboard) {
@@ -411,6 +443,7 @@ fun AppRoot(
                     }
                 }
             } else {
+                    }
                 Box(modifier = Modifier.weight(1f)) {
                     RenderSessionScreens(
                         uiState = uiState,
@@ -457,23 +490,142 @@ private fun RenderSessionScreens(
                 onLoginClick = { viewModel.login(context) }
             )
 
-            SessionScreen.TraineeDashboard -> TraineeDashboardScreen(
+            SessionScreen.TraineeDashboard -> {
+                val isOwnerDev = uiState.rollInput.trim() == "12" || uiState.rollInput.trim().equals("BIJITH S BINU", ignoreCase = true)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    var showFullConsole by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                    if (isOwnerDev) {
+                        var devExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                        var editTitle by androidx.compose.runtime.remember(uiState.remoteUiConfig.appTitle) { androidx.compose.runtime.mutableStateOf<String>(uiState.remoteUiConfig.appTitle) }
+                        var editAnnouncement by androidx.compose.runtime.remember(uiState.remoteUiConfig.announcementBanner) { androidx.compose.runtime.mutableStateOf<String>(uiState.remoteUiConfig.announcementBanner) }
+                        var editMaintBanner by androidx.compose.runtime.remember(uiState.remoteAppConfig.maintenanceBanner) { androidx.compose.runtime.mutableStateOf<String>(uiState.remoteAppConfig.maintenanceBanner) }
+                        var editPin by androidx.compose.runtime.remember(uiState.remoteAppConfig.developerPin) { androidx.compose.runtime.mutableStateOf<String>(uiState.remoteAppConfig.developerPin) }
+                        androidx.compose.material3.Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("DEV MODE // ROLL 12 (BIJITH S BINU)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TextButton(onClick = {
+                                        com.example.ui.screens.InaugurationController.triggerFireworks()
+                                    }) {
+                                        Text("Fireworks", maxLines = 1, softWrap = false)
+                                    }
+                                    TextButton(onClick = { showFullConsole = !showFullConsole }) {
+                                        Text(if (showFullConsole) "Close Master" else "Full Console", maxLines = 1, softWrap = false)
+                                    }
+                                    TextButton(onClick = { devExpanded = !devExpanded }) {
+                                        Text(if (devExpanded) "Hide" else "Quick Edit", maxLines = 1, softWrap = false)
+                                    }
+                                }
+                                if (devExpanded) {
+                                    OutlinedTextField(
+                                        value = editTitle,
+                                        onValueChange = { editTitle = it },
+                                        label = { Text("App Title (Live)") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    OutlinedTextField(
+                                        value = editAnnouncement,
+                                        onValueChange = { editAnnouncement = it },
+                                        label = { Text("Announcement Banner (All Users)") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    OutlinedTextField(
+                                        value = editMaintBanner,
+                                        onValueChange = { editMaintBanner = it },
+                                        label = { Text("Maintenance Banner") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    OutlinedTextField(
+                                        value = editPin,
+                                        onValueChange = { editPin = it.filter(Char::isDigit).take(6) },
+                                        label = { Text("Dev PIN") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            modifier = Modifier.weight(1f),
+                                            onClick = {
+                                                viewModel.saveRemoteUiConfig(
+                                                    mapOf(
+                                                        "appTitle" to editTitle.trim(),
+                                                        "announcementBanner" to editAnnouncement.trim()
+                                                    )
+                                                    ,
+                                                    "global"
+                                                )
+                                                viewModel.saveRemoteAppConfig(
+                                                    mapOf(
+                                                        "developerPin" to editPin.trim().ifBlank { "9037" },
+                                                        "maintenanceBanner" to editMaintBanner.trim()
+                                                    )
+                                                )
+                                            }
+                                        ) {
+                                            Text("Publish Live")
+                                        }
+                                        OutlinedButton(
+                                            modifier = Modifier.weight(1f),
+                                            onClick = {
+                                                val nextLock = (!uiState.remoteAppConfig.maintenanceMode).toString()
+                                                viewModel.saveRemoteAppConfig(
+                                                    mapOf(
+                                                        "maintenanceMode" to nextLock,
+                                                        "developerPin" to editPin.trim().ifBlank { "9037" },
+                                                        "maintenanceBanner" to editMaintBanner.trim()
+                                                    )
+                                                )
+                                            }
+                                        ) {
+                                            Text(if (uiState.remoteAppConfig.maintenanceMode) "Unlock App" else "Lock App")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (showFullConsole) {
+                            DeveloperMasterPanel(
+                                appConfig = uiState.remoteAppConfig,
+                                uiConfig = uiState.remoteUiConfig,
+                                bugList = uiState.bugReports,
+                                onSaveAppConfig = viewModel::saveRemoteAppConfig,
+                                onSaveUiConfig = viewModel::saveRemoteUiConfig,
+                                onResolveBug = viewModel::resolveBugReport,
+                                onEditAnySheetRow = { tab, row, col, valStr -> viewModel.editSheetRow(tab, row, col, valStr) }
+                            )
+                        } else {
+                        TraineeDashboardScreen(
                 uiState = uiState,
                 onTabSelected = { tab -> viewModel.onTraineeTabSelected(tab, context) },
                 onSyncNotices = { viewModel.syncNoticeStateAndPopup(context) },
                 onMarkNoticesSeen = { viewModel.markNoticesSeen(context) },
                 onRefresh = viewModel::refreshTraineeDashboard,
-                onLogout = viewModel::logout,
-                onSubmitLeave = viewModel::submitLeaveRequest,
+                            onLogout = viewModel::logout,
+                onSubmitLeave = { type, window, reason, sig, onReset -> viewModel.submitLeaveRequest(type, window, reason, sig, onReset) },
                 onDismissFeedback = viewModel::dismissLeaveFeedback,
-                onSaveProjectGroup = viewModel::saveProjectGroup,
+                onSaveProjectGroup = { title, members, leaderRoll, leaderName, onReset -> viewModel.saveProjectGroup(title, members, leaderRoll, leaderName, onReset) },
                 onRefreshProjectGroups = viewModel::refreshProjectGroupsForTrainee,
                 onDismissProjectFeedback = viewModel::dismissProjectGroupFeedback,
-                onSubmitWorkMarkQuery = viewModel::submitTraineeWorkMarkQuery,
+                onSubmitWorkMarkQuery = { m, w, c, t, onReset -> viewModel.submitTraineeWorkMarkQuery(m, w, c, t, onReset) },
                 onDismissWorkQueryFeedback = viewModel::dismissTraineeWorkMarkQueryFeedback,
-                onSubmitRunningLate = viewModel::submitTraineeRunningLateAlert,
+                onSubmitRunningLate = { eta, cat, det, onReset -> viewModel.submitTraineeRunningLateAlert(eta, cat, det, onReset) },
                 onDismissRunningLateFeedback = viewModel::dismissTraineeRunningLateAlertFeedback,
-                onSubmitAcademicRecord = viewModel::submitTraineeAcademicRecord,
+                onSubmitAcademicRecord = { tTopic, tStat, tDate, lJob, lStat, lDate, rem -> viewModel.submitTraineeAcademicRecord(tTopic, tStat, tDate, lJob, lStat, lDate, rem) },
                 onRefreshAcademicSubmission = viewModel::refreshTraineeAcademicSubmission,
                 onDismissAcademicFeedback = viewModel::dismissTraineeAcademicFeedback,
                 onRefreshTechNews = viewModel::refreshTechnicalNews,
@@ -487,15 +639,20 @@ private fun RenderSessionScreens(
                         viewModel.checkForAppUpdate(silentIfUpToDate = false)
                     }
                 }
-            )
+                        )
+                    }
+                }
+                }
+            }
+
 
             SessionScreen.ParentDashboard -> ParentDashboardScreen(
                 uiState = uiState,
                 onRefresh = viewModel::refreshParentDashboard,
                 onLogout = viewModel::logout,
                 onEvaluateNotification = { viewModel.evaluateParentNotification(context) },
-                onSubmitBunkAlert = viewModel::submitParentBunkAlert,
-                onSubmitLeaveReason = viewModel::submitParentLeaveReason,
+                onSubmitBunkAlert = { details, onReset -> viewModel.submitParentBunkAlert(details, onReset) },
+                onSubmitLeaveReason = { reason, onReset -> viewModel.submitParentLeaveReason(reason, onReset) },
                 onDismissFeedback = viewModel::dismissParentAlertFeedback,
                 onCheckUpdate = {
                     if (viewModel.uiState.value.remoteAppConfig.updaterEnabled) {
@@ -588,18 +745,18 @@ private fun RenderSessionScreens(
                         Text("Exit Developer Console")
                     }
                 }
-                Box(modifier = Modifier.weight(1f)) {
                     DeveloperMasterPanel(
                         appConfig = uiState.remoteAppConfig,
                         uiConfig = uiState.remoteUiConfig,
-                        bugList = uiState.bugReports,
+                                bugList = uiState.bugReports,
                         onSaveAppConfig = viewModel::saveRemoteAppConfig,
                         onSaveUiConfig = viewModel::saveRemoteUiConfig,
                         onResolveBug = viewModel::resolveBugReport,
-                        onEditAnySheetRow = viewModel::editSheetRow
+                        onEditAnySheetRow = { tab, row, col, valStr -> viewModel.editSheetRow(tab, row, col, valStr) }
                     )
-                }
             }
+            else -> Unit
         }
     }
+
 }

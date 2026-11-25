@@ -1,6 +1,14 @@
 package com.example.ui.screens
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -106,85 +114,11 @@ fun AttendanceRegisterTab(
     val query = uiState.registerSearchQuery.trim()
     val filter = uiState.registerStatusFilter
 
-    var graceTarget by remember { mutableStateOf<StaffAttendanceRecord?>(null) }
-    var graceCutoff by remember { mutableStateOf("09:45 AM") }
-    var graceNote by remember { mutableStateOf("") }
-    var alertTarget by remember { mutableStateOf<StaffAttendanceRecord?>(null) }
-    var alertMsg by remember { mutableStateOf("") }
-
-    if (uiState.duplicatePunchPrompt != null) {
-        val dup = uiState.duplicatePunchPrompt
-        AlertDialog(
-            onDismissRequest = onDismissDuplicatePunch,
-            title = { Text("Override Existing Status?") },
-            text = {
-                Text("${dup.studentName} (Roll #${dup.roll}) is already marked ${dup.currentStatus}. Override with ${dup.requestedStatus}?")
-            },
-            confirmButton = {
-                Button(onClick = onConfirmDuplicatePunch) { Text("Override") }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismissDuplicatePunch) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (graceTarget != null) {
-        val target = graceTarget!!
-        AlertDialog(
-            onDismissRequest = { graceTarget = null },
-            title = { Text("Late Grace: ${target.name} (#${target.roll})") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = graceCutoff, onValueChange = { graceCutoff = it }, label = { Text("Custom Cutoff (e.g. 09:45 AM)") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = graceNote, onValueChange = { graceNote = it }, label = { Text("Note (e.g. Bus Delay)") }, modifier = Modifier.fillMaxWidth())
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onSetLateGrace(target.roll, LateGraceModes.EXEMPT_TODAY, "", graceNote); graceTarget = null }, modifier = Modifier.weight(1f)) {
-                            Text("Exempt Today")
-                        }
-                        OutlinedButton(onClick = { onSetLateGrace(target.roll, LateGraceModes.CLEAR, "", ""); graceTarget = null }, modifier = Modifier.weight(1f)) {
-                            Text("Clear")
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = { onSetLateGrace(target.roll, LateGraceModes.CUSTOM_CUTOFF, graceCutoff, graceNote); graceTarget = null }) {
-                    Text("Apply Cutoff")
-                }
-            },
-            dismissButton = { TextButton(onClick = { graceTarget = null }) { Text("Close") } }
-        )
-    }
-
-    if (alertTarget != null) {
-        val target = alertTarget!!
-        AlertDialog(
-            onDismissRequest = { alertTarget = null },
-            title = { Text("Notify Parent of #${target.roll}") },
-            text = {
-                OutlinedTextField(
-                    value = alertMsg,
-                    onValueChange = { alertMsg = it },
-                    label = { Text("Urgent Message to Parent") },
-                    minLines = 2,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    enabled = alertMsg.isNotBlank(),
-                    onClick = {
-                        onSendInstantParentAlert(target.roll, target.name, ParentAlertTypes.INSTRUCTOR_WARNING, alertMsg)
-                        alertMsg = ""
-                        alertTarget = null
-                    }
-                ) { Text("Send Alert") }
-            },
-            dismissButton = { TextButton(onClick = { alertTarget = null }) { Text("Cancel") } }
-        )
-    }
-
+    val presentOverrides = remember { mutableStateMapOf<String, Int>() }
+    val possibleOverrides = remember { mutableStateMapOf<String, Int>() }
+    var editingRecord by remember { mutableStateOf<StaffAttendanceRecord?>(null) }
+    var editPresentText by remember { mutableStateOf("") }
+    var editPossibleText by remember { mutableStateOf("") }
     val filtered = remember(data?.allAttendance, query, filter) {
         data?.allAttendance.orEmpty().filter { rec ->
             val matchesQuery = query.isBlank() ||
@@ -197,10 +131,10 @@ fun AttendanceRegisterTab(
                 "HALF" -> upper.contains("HALF") || upper.contains("OUT-PASS")
                 "BELOW 80%" -> rec.total > 0 && rec.pct < AttendanceMath.EXAM_THRESHOLD_PCT
                 else -> true
-            }
+                    }
             matchesQuery && matchesFilter
-        }
-    }
+                    }
+                    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().testTag("staff_register_tab"),
@@ -226,10 +160,53 @@ fun AttendanceRegisterTab(
                         Spacer(Modifier.width(4.dp))
                         Text(if (data?.attendanceClosed == true) "Closed" else "Close Day", maxLines = 1)
                     }
-                    OutlinedButton(onClick = onExportPdf, enabled = !uiState.isExportingPdf) {
+                    var showPrintPicker by remember { androidx.compose.runtime.mutableStateOf(false) }
+                    var selRoll by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selName by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selToday by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selIn by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selOut by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selPres by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selHalf by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selTot by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selPct by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selStatus by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var selSign by remember { androidx.compose.runtime.mutableStateOf(true) }
+                    var printRole by remember { androidx.compose.runtime.mutableStateOf("Instructor") }
+                    if (showPrintPicker) {
+                        androidx.compose.ui.window.Dialog(onDismissRequest = { showPrintPicker = false }) {
+                            Surface(shape = RoundedCornerShape(14.dp)) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Select Print Details", style = MaterialTheme.typography.titleMedium)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(selected = printRole == "Instructor", onClick = { printRole = "Instructor" }, label = { Text("Instructor") })
+                                        FilterChip(selected = printRole == "Principal", onClick = { printRole = "Principal" }, label = { Text("Principal") })
+                                    }
+                                    @Composable fun OptRow(lbl: String, checked: Boolean, onChg: (Boolean) -> Unit) {
+                                        Row(Modifier.fillMaxWidth().clickable { onChg(!checked) }, verticalAlignment = Alignment.CenterVertically) {
+                                            Checkbox(checked = checked, onCheckedChange = onChg)
+                                            Text(lbl, style = MaterialTheme.typography.bodyMedium)
+                                        }
+                                    }
+                                    OptRow("Roll", selRoll) { selRoll = it }
+                                    OptRow("Trainee Name", selName) { selName = it }
+                                    OptRow("Today Status", selToday) { selToday = it }
+                                    OptRow("IN / OUT Punch Times", selIn || selOut) { selIn = it; selOut = it }
+                                    OptRow("Present / Half / Total Days", selPres && selHalf && selTot) { selPres = it; selHalf = it; selTot = it }
+                                    OptRow("Attendance % & Status", selPct && selStatus) { selPct = it; selStatus = it }
+                                    OptRow("Signatures", selSign) { selSign = it }
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                        TextButton(onClick = { showPrintPicker = false }) { Text("Cancel") }
+                                        Button(onClick = { showPrintPicker = false; onExportPdf() }) { Text("Export PDF") }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    OutlinedButton(onClick = { showPrintPicker = true }, enabled = !uiState.isExportingPdf) {
                         Icon(Icons.Rounded.PictureAsPdf, contentDescription = "Export Server PDF", modifier = Modifier.size(16.dp))
                     }
-                }
+                    }
 
                 if (uiState.closeAttendanceMessage != null) InlineAlertCard(uiState.closeAttendanceMessage, isError = false)
                 if (uiState.closeAttendanceError != null) InlineAlertCard(uiState.closeAttendanceError, isError = true)
@@ -253,12 +230,16 @@ fun AttendanceRegisterTab(
                             label = { Text(st) }
                         )
                     }
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         items(filtered, key = { "st_reg_${it.roll}" }) { rec ->
-            val pctColor = if (rec.pct >= AttendanceMath.EXAM_THRESHOLD_PCT) colors.emeraldAccent else colors.redAccent
+                                val effPresent = presentOverrides[rec.roll] ?: rec.present
+                                val effPossible = possibleOverrides[rec.roll] ?: rec.total
+                                val exactPct = if (effPossible > 0) ((effPresent + rec.half * 0.5) / effPossible.toDouble()) * 100.0 else rec.pct.toDouble()
+                                val formattedPct = String.format(java.util.Locale.US, "%.2f%%", exactPct)
+                                val pctColor = if (exactPct >= AttendanceMath.EXAM_THRESHOLD_PCT) colors.emeraldAccent else colors.redAccent
             val undoEntry = uiState.undoMap[rec.roll]
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -271,47 +252,93 @@ fun AttendanceRegisterTab(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("#${rec.roll.padStart(2, '0')} ${rec.name}", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                text = "In: ${rec.inT} • Out: ${rec.outT} • ${rec.present}P/${rec.half}H/${rec.total}D",
+                                        text = "In: ${rec.inT} • Out: ${rec.outT} • ${effPresent}P/${rec.half}H/${effPossible}",
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                                 color = colors.textMuted
                             )
-                        }
+                    }
                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             AttendanceStatusPill(rec.todayStatus)
-                            Text("${rec.pct}%", style = MaterialTheme.typography.labelMedium.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = pctColor)
-                        }
+                                    Text(formattedPct, style = MaterialTheme.typography.labelMedium.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = pctColor)
+                    }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(onClick = { onManualPunch(rec.roll, "PRESENT") }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
-                            Text("P", style = MaterialTheme.typography.labelMedium, color = colors.emeraldAccent)
-                        }
-                        OutlinedButton(onClick = { onManualPunch(rec.roll, "HALF-DAY") }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
-                            Text("HD", style = MaterialTheme.typography.labelMedium, color = colors.amberAccent)
-                        }
-                        OutlinedButton(onClick = { onResetAttendanceToAbsent(rec.roll, rec.name) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
-                            Text("A", style = MaterialTheme.typography.labelMedium, color = colors.redAccent)
-                        }
-                        OutlinedButton(onClick = { graceTarget = rec }, modifier = Modifier.weight(1.2f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
-                            Text("Grace", style = MaterialTheme.typography.labelSmall)
-                        }
-                        OutlinedButton(onClick = { alertTarget = rec }, modifier = Modifier.weight(1.2f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
-                            Text("Alert", style = MaterialTheme.typography.labelSmall)
-                        }
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedButton(onClick = { onManualPunch(rec.roll, "PRESENT") }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
+                                        Text("Present", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall, color = colors.emeraldAccent)
                     }
-
+                                    OutlinedButton(onClick = { onManualPunch(rec.roll, "HALF-DAY") }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
+                                        Text("Half Day", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall, color = colors.amberAccent)
+                    }
+                                    OutlinedButton(onClick = { onResetAttendanceToAbsent(rec.roll, rec.name) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
+                                        Text("Absent", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall, color = colors.redAccent)
+                    }
+                                    OutlinedButton(onClick = { onUndoAttendance(rec.roll) }, modifier = Modifier.weight(0.85f), contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)) {
+                                        Text("Undo", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall, color = colors.skyAccent)
+                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            editingRecord = rec
+                                            editPresentText = effPresent.toString()
+                                            editPossibleText = effPossible.toString()
+                                        },
+                                        modifier = Modifier.weight(0.85f),
+                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("Edit", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    }
                     if (undoEntry != null && uiState.remoteAppConfig.undoEnabled && uiState.remoteUiConfig.showUndoButton) {
                         TextButton(onClick = { onUndoAttendance(rec.roll) }, contentPadding = PaddingValues(0.dp)) {
                             Icon(Icons.Rounded.Undo, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Undo (Restore ${undoEntry.previousStatus})", style = MaterialTheme.typography.labelSmall)
-                        }
+                            Text("Undo (Restore $undoEntry)", style = MaterialTheme.typography.labelSmall)
                     }
-                }
-            }
-        }
-    }
+                    }
+                    }
+                    }
+                    }
+                    }
+
+    val activeEdit = editingRecord
+
+    if (activeEdit != null) {
+        AlertDialog(
+            onDismissRequest = { editingRecord = null },
+            title = { Text("Edit Days — #${activeEdit.roll.padStart(2, '0')} ${activeEdit.name}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = editPresentText,
+                        onValueChange = { editPresentText = it.filter { ch -> ch.isDigit() } },
+                        label = { Text("Present Days") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = editPossibleText,
+                        onValueChange = { editPossibleText = it.filter { ch -> ch.isDigit() } },
+                        label = { Text("Possible Days") },
+                        singleLine = true
+                    )
+                    }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val pVal = editPresentText.toIntOrNull() ?: activeEdit.present
+                    val dVal = editPossibleText.toIntOrNull() ?: activeEdit.total
+                    presentOverrides[activeEdit.roll] = pVal.coerceAtLeast(0)
+                    possibleOverrides[activeEdit.roll] = dVal.coerceAtLeast(0)
+                    editingRecord = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingRecord = null }) { Text("Cancel") }
+                    }
+        )
+                    }
 }
+
+
 
 @Composable
 fun ApprovalsAndAlertsTab(
@@ -348,7 +375,7 @@ fun ApprovalsAndAlertsTab(
                         title = "Instructor Signature",
                         tagPrefix = "sir_sig"
                     )
-                }
+                    }
             },
             confirmButton = {
                 Button(
@@ -364,7 +391,7 @@ fun ApprovalsAndAlertsTab(
             },
             dismissButton = { TextButton(onClick = { approvingReq = null }) { Text("Cancel") } }
         )
-    }
+                    }
 
     if (rejectingReq != null) {
         val req = rejectingReq!!
@@ -388,7 +415,7 @@ fun ApprovalsAndAlertsTab(
             },
             dismissButton = { TextButton(onClick = { rejectingReq = null }) { Text("Cancel") } }
         )
-    }
+                    }
 
     val pending = data?.pendingLeaves.orEmpty()
     val lateAlerts = data?.runningLateAlerts.orEmpty()
@@ -415,11 +442,11 @@ fun ApprovalsAndAlertsTab(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { approvingReq = req }, modifier = Modifier.weight(1f)) { Text("Sign & Approve") }
                             OutlinedButton(onClick = { rejectingReq = req }, modifier = Modifier.weight(1f)) { Text("Reject", color = colors.redAccent) }
-                        }
                     }
-                }
-            }
-        }
+                    }
+                    }
+                    }
+                    }
 
         if (lateAlerts.isNotEmpty()) {
             item { Text("Running Late Alerts (${lateAlerts.size})", style = MaterialTheme.typography.titleMedium) }
@@ -429,26 +456,26 @@ fun ApprovalsAndAlertsTab(
                         Text("#${rl.roll} ${rl.studentName} • ETA ${rl.expectedArrival}", style = MaterialTheme.typography.titleSmall, color = colors.amberAccent)
                         Text("${rl.reasonCategory}: ${rl.details}", style = MaterialTheme.typography.bodySmall)
                     }
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         if (parentAlerts.isNotEmpty()) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Rounded.NotificationsActive, contentDescription = null, tint = colors.redAccent)
                     Text("Parent Alerts (${parentAlerts.size})", style = MaterialTheme.typography.titleMedium)
-                }
-            }
+                    }
+                    }
             items(parentAlerts, key = { "st_pa_${it.id}" }) { al ->
                 Surface(shape = RoundedCornerShape(14.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text("#${al.roll} ${al.studentName} • ${al.alertType}", style = MaterialTheme.typography.titleSmall, color = colors.redAccent)
                         Text("${al.date} ${al.time}: ${al.message}", style = MaterialTheme.typography.bodySmall)
                     }
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         item {
             HorizontalDivider(color = colors.borderSubtle)
@@ -459,9 +486,9 @@ fun ApprovalsAndAlertsTab(
                         Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Log Books", tint = colors.skyAccent)
                     }
                     TextButton(onClick = onForwardAllAcademicToPrincipal) { Text("Forward All Verified") }
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         items(submissions, key = { "st_ac_${it.id}_${it.roll}" }) { sub ->
             var remark by remember(sub.id) { mutableStateOf(sub.instructorRemark) }
@@ -474,17 +501,17 @@ fun ApprovalsAndAlertsTab(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { onVerifyAcademicSubmission(sub.roll, sub.id, remark) }, modifier = Modifier.weight(1f)) { Text("Verify") }
                             OutlinedButton(onClick = { onForwardSingleAcademicToPrincipal(sub.roll) }, modifier = Modifier.weight(1f)) { Text("Forward") }
-                        }
+                    }
                     } else if (!sub.sentToPrincipal) {
                         OutlinedButton(onClick = { onForwardSingleAcademicToPrincipal(sub.roll) }, modifier = Modifier.fillMaxWidth()) {
                             Text("Forward Verified Log Book to Principal")
-                        }
                     }
-                }
-            }
-        }
-    }
-}
+                    }
+                    }
+                    }
+                    }
+                    }
+                    }
 
 @Composable
 fun ShopFloorControlTab(
@@ -524,9 +551,9 @@ fun ShopFloorControlTab(
                     }
                     if (uiState.shopFloorMessage != null) InlineAlertCard(uiState.shopFloorMessage, isError = false)
                     if (uiState.shopFloorError != null) InlineAlertCard(uiState.shopFloorError, isError = true)
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         item {
             Surface(shape = RoundedCornerShape(16.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
@@ -541,14 +568,14 @@ fun ShopFloorControlTab(
                             Icon(Icons.Rounded.AddCircle, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Assign")
-                        }
+                    }
                         OutlinedButton(enabled = manualRoll.isNotBlank(), onClick = { onAddOrRemoveShopFloor(manualRoll, "REMOVE", "POST_3PM", endTime); manualRoll = "" }, modifier = Modifier.weight(1f)) {
                             Text("Remove")
-                        }
                     }
-                }
-            }
-        }
+                    }
+                    }
+                    }
+                    }
 
         val list = data?.shopFloorList.orEmpty()
         item { Text("Assigned Shop Floor Trainees (${list.size})", style = MaterialTheme.typography.titleMedium) }
@@ -563,13 +590,13 @@ fun ShopFloorControlTab(
                             Icon(Icons.Rounded.Verified, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Verify")
-                        }
                     }
-                }
-            }
-        }
-    }
-}
+                    }
+                    }
+                    }
+                    }
+                    }
+                    }
 
 @Composable
 fun CampusManagementTab(
@@ -600,7 +627,7 @@ fun CampusManagementTab(
 
     val dutyToday = remember(data?.dutyOverrides, data?.holidays) {
         DutyRotationEngine.assignmentForDate(overrides = data?.dutyOverrides.orEmpty(), holidays = data?.holidays.orEmpty())
-    }
+                    }
     var dutyNote by remember { mutableStateOf("") }
     var ovRoll1 by remember { mutableStateOf(dutyToday.firstRoll.toString()) }
     var ovRoll2 by remember { mutableStateOf(dutyToday.secondRoll.toString()) }
@@ -611,7 +638,7 @@ fun CampusManagementTab(
 
     val timetablePeriods = remember(uiState.activeTimetable) {
         mutableStateListOf<TimetablePeriod>().apply { addAll(uiState.activeTimetable.ifEmpty { TimetableStore.defaultWeeklyTimetable() }) }
-    }
+                    }
     var allowTraineeTtEdit by remember(data?.traineeTimetableEditEnabled) { mutableStateOf(data?.traineeTimetableEditEnabled ?: false) }
 
     LazyColumn(
@@ -637,13 +664,13 @@ fun CampusManagementTab(
                         )
                         Button(onClick = onTriggerManualTap, enabled = !uiState.isTriggeringEspTap) {
                             Text(if (uiState.isTriggeringEspTap) "Tapping..." else "Tap Card")
-                        }
+                    }
                     }
                     if (uiState.espTapMessage != null) InlineAlertCard(uiState.espTapMessage, isError = false)
                     if (uiState.espTapError != null) InlineAlertCard(uiState.espTapError, isError = true)
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         item {
             Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
@@ -662,9 +689,9 @@ fun CampusManagementTab(
                         onClick = { onPostNotice(noticeTitle, noticeCat, noticeBody) { noticeTitle = ""; noticeBody = "" } },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Post Notice") }
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         item {
             Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
@@ -682,9 +709,9 @@ fun CampusManagementTab(
                         onClick = { onPostHoliday(holidayDate, holidayReason) { holidayReason = "" } },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Publish Holiday") }
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         item {
             Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
@@ -717,9 +744,9 @@ fun CampusManagementTab(
                     }
                     if (uiState.dutyOverrideMessage != null) InlineAlertCard(uiState.dutyOverrideMessage, isError = false)
                     if (uiState.dutyOverrideError != null) InlineAlertCard(uiState.dutyOverrideError, isError = true)
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         item {
             Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
@@ -728,7 +755,7 @@ fun CampusManagementTab(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Rounded.Groups, contentDescription = null, tint = colors.skyAccent)
                             Text("Project Groups & Timetable", style = MaterialTheme.typography.titleSmall)
-                        }
+                    }
                         IconButton(onClick = onRefreshProjectGroups) { Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Groups") }
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -744,9 +771,9 @@ fun CampusManagementTab(
                     }
                     if (uiState.timetableFeedbackMessage != null) InlineAlertCard(uiState.timetableFeedbackMessage, isError = false)
                     if (uiState.timetableError != null) InlineAlertCard(uiState.timetableError, isError = true)
-                }
-            }
-        }
+                    }
+                    }
+                    }
 
         item {
             Surface(shape = RoundedCornerShape(18.dp), color = colors.cardSurface, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.fillMaxWidth()) {
@@ -760,8 +787,8 @@ fun CampusManagementTab(
                         onClick = { onLogToolCrib(toolItem, toolCondition, toolNotes) { toolItem = ""; toolNotes = "" } },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Log Tool Crib Entry") }
-                }
-            }
-        }
-    }
-}
+                    }
+                    }
+                    }
+                    }
+                    }

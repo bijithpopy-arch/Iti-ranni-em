@@ -18,6 +18,7 @@ enum class TraineeTab(val label: String) {
 enum class StaffTab(val label: String) {
     ATTENDANCE_REGISTER("Register"),
     APPROVALS_ALERTS("Approvals"),
+    ALERTS("Alerts"),
     MARKS_REGISTER("Marks Table"),
     SHOP_FLOOR("Shop Floor"),
     CAMPUS_HUB("Campus")
@@ -145,17 +146,6 @@ data class DutyOverrideEntry(
     val updatedAt: String = ""
 )
 
-data class DutyPairSlot(
-    val dayNumber: Int = 1,
-    val rolls: List<Int> = emptyList(),
-    val dateLabel: String = "",
-    val dateKey: String = "",
-    val isToday: Boolean = false,
-    val dutyItems: List<String> = emptyList(),
-    val isOverridden: Boolean = false,
-    val dutyNote: String = ""
-)
-
 data class MonthlyExamMark(
     val id: String,
     val monthLabel: String,
@@ -260,14 +250,10 @@ data class TechNewsItem(
 )
 
 data class TimetablePeriod(
-    val id: String = "",
-    val dayOfWeek: String = "MON",
-    val startTime: String = "",
-    val endTime: String = "",
-    val subject: String = "",
-    val sessionType: String = "Theory",
-    val roomOrNote: String = "",
-    val updatedBy: String = ""
+    val day: String,
+    val slot: String,
+    val subject: String,
+    val roomOrLab: String = "EM Lab"
 )
 
 object LateGraceModes {

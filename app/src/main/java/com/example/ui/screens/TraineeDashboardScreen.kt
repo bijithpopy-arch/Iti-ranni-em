@@ -204,7 +204,7 @@ fun TraineeDashboardScreen(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !AttendanceNotificationHelper.hasNotificationPermission(context)
         ) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            // REMOVED_CRASH_LINE // notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 

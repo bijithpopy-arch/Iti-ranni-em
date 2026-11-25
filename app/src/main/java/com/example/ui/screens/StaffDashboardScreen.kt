@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -282,6 +285,17 @@ fun StaffDashboardScreen(
                     }
 
                     when (uiState.selectedStaffTab) {
+                                StaffTab.ALERTS -> {
+                                    var instructorAlerts by remember { mutableStateOf(defaultInstructorAlerts()) }
+                                    InstructorAlertHubPanel(
+                                        alerts = instructorAlerts,
+                                        onUpdateAlerts = { instructorAlerts = it },
+                                        isInstructor = true,
+                                        cardSurface = colors.cardSurface,
+                                        borderSubtle = colors.borderSubtle,
+                                        textMuted = colors.textMuted
+                                    )
+                                }
                         StaffTab.ATTENDANCE_REGISTER -> AttendanceRegisterTab(
                             uiState = uiState,
                             onSearchChanged = onRegisterSearchChanged,
@@ -298,7 +312,6 @@ fun StaffDashboardScreen(
                             onSetLateGrace = onSetLateGrace,
                             onSendInstantParentAlert = onSendInstantParentAlert
                         )
-
                         StaffTab.APPROVALS_ALERTS -> ApprovalsAndAlertsTab(
                             uiState = uiState,
                             onApproveAndSign = onApproveAndSign,
@@ -433,6 +446,7 @@ private fun StaffTabIcon(tab: StaffTab, selected: Boolean, approvalsAndAlertsCou
     val icon: ImageVector = when (tab) {
         StaffTab.ATTENDANCE_REGISTER -> if (selected) Icons.Rounded.Groups else Icons.Outlined.Groups
         StaffTab.APPROVALS_ALERTS -> if (selected) Icons.Rounded.PendingActions else Icons.Outlined.PendingActions
+        StaffTab.ALERTS -> if (selected) Icons.Rounded.Campaign else Icons.Outlined.Campaign
         StaffTab.MARKS_REGISTER -> if (selected) Icons.Rounded.Grade else Icons.Outlined.Grade
         StaffTab.SHOP_FLOOR -> if (selected) Icons.Rounded.Build else Icons.Outlined.Build
         StaffTab.CAMPUS_HUB -> if (selected) Icons.Rounded.Campaign else Icons.Outlined.Campaign

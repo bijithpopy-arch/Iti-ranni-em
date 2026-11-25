@@ -1,4 +1,4 @@
-Package com.example.notifications
+package com.example.notifications
 
 import android.Manifest
 import android.app.NotificationChannel
@@ -263,6 +263,7 @@ object AttendanceNotificationHelper {
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(pi)
             .setAutoCancel(true)
             .build()

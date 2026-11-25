@@ -1,4 +1,17 @@
 package com.example.ui.screens
+import androidx.compose.foundation.layout.wrapContentWidth
+import java.time.LocalDate
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -207,10 +220,7 @@ fun LoginScreen(
             ) {
                 InstitutionalHeaderCard()
 
-                MottoMarqueeBanner(
-                    text = stringResource(R.string.motto_marquee),
-                    modifier = Modifier.testTag("motto_marquee_banner")
-                )
+                    TrainQuoteMarqueeBanner(modifier = Modifier.testTag("motto_marquee_banner"))
 
                 Surface(
                     shape = RoundedCornerShape(22.dp),
@@ -887,6 +897,69 @@ private fun OfficialPortalPill(
                 contentDescription = stringResource(R.string.cd_open_external),
                 tint = colors.skyAccent,
                 modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+
+@Composable
+private fun TrainQuoteMarqueeBanner(modifier: Modifier = Modifier) {
+    val dailyQuotes = listOf(
+        "കഠിനാധ്വാനമാണ് ലക്ഷ്യത്തിലേക്കുള്ള എഞ്ചിൻ • Hard work is the engine to every goal",
+        "ഓരോ ദിവസവും പുതിയൊരു സ്റ്റേഷൻ, മുന്നോട്ട് കുതിക്കുക • Every day is a new station—keep moving forward",
+        "കൃത്യതയും അച്ചടക്കവും വിജയത്തിന്റെ പാളങ്ങളാണ് • Discipline and precision are the tracks to success",
+        "ചെറിയ ചുവടുകൾ വലിയ ദൂരങ്ങൾ താണ്ടുന്നു • Small steps cover great distances",
+        "പരിശീലനമാണ് പൂർണ്ണതയിലേക്കുള്ള വഴി • Practice is the path to mastery"
+    )
+    val dayIndex = (LocalDate.now().dayOfYear - 1).mod(dailyQuotes.size)
+    val tickerText = dailyQuotes[dayIndex]
+    val boxWidthState = remember { mutableStateOf(0f) }
+    val textWidthState = remember { mutableStateOf(0f) }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "train_quote_ticker")
+    val progress by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 14000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "train_quote_progress"
+    )
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF102A43))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        val density = LocalDensity.current
+        val trackWidthPx = with(density) { maxWidth.toPx() }.also { boxWidthState.value = it }
+        val spanPx = (boxWidthState.value + textWidthState.value).coerceAtLeast(trackWidthPx * 1.5f)
+        val shiftPx = (boxWidthState.value - progress * spanPx).toInt()
+
+        Row(
+            modifier = Modifier
+                .offset { IntOffset(x = shiftPx, y = 0) }
+                .wrapContentWidth(unbounded = true),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "🚆",
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                text = tickerText,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = Color.White,
+                maxLines = 1,
+                softWrap = false,
+                onTextLayout = { layout -> textWidthState.value = layout.size.width.toFloat() }
             )
         }
     }
