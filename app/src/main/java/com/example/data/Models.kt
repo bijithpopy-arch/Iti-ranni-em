@@ -145,6 +145,14 @@ data class DutyOverrideEntry(
     val updatedAt: String = ""
 )
 
+data class DutyPairSlot(
+    val dateKey: String = "",
+    val firstRoll: Int = 1,
+    val secondRoll: Int = 2,
+    val label: String = "",
+    val isOverride: Boolean = false
+)
+
 data class MonthlyExamMark(
     val id: String,
     val monthLabel: String,
