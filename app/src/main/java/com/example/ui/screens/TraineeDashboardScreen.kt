@@ -109,7 +109,7 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.AttendanceMath
 import com.example.data.AttendanceSummary
-import com.example.data.IstDateTimeFormatter
+import com.example.data.EmIstDateTimeFormatter
 import com.example.data.TimetablePeriod
 import com.example.data.TraineeLeaveItem
 import com.example.data.TraineeTab
@@ -610,13 +610,13 @@ private fun TraineeTodayStatusCard(
                 Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.background, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.weight(1f)) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text("MORNING IN", style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.textMuted)
-                        Text(IstDateTimeFormatter.formatTimeOnly(attendance.inT), style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = colors.emeraldAccent)
+                        Text(EmIstDateTimeFormatter.formatTimeOnly(attendance.inT), style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = colors.emeraldAccent)
                     }
                 }
                 Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.background, border = BorderStroke(1.dp, colors.borderSubtle), modifier = Modifier.weight(1f)) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text("AFTERNOON OUT", style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily), color = colors.textMuted)
-                        Text(IstDateTimeFormatter.formatTimeOnly(attendance.outT), style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = colors.amberAccent)
+                        Text(EmIstDateTimeFormatter.formatTimeOnly(attendance.outT), style = MaterialTheme.typography.titleLarge.copy(fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.Bold), color = colors.amberAccent)
                     }
                 }
             }

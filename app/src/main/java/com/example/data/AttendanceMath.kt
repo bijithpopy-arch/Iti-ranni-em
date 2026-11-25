@@ -48,7 +48,7 @@ object AttendanceMath {
     }
 }
 
-object IstDateTimeFormatter {
+object EmIstDateTimeFormatter {
     private val istTz = TimeZone.getTimeZone("Asia/Kolkata")
 
     fun formatDateOnly(raw: String, fallback: String = "-"): String {

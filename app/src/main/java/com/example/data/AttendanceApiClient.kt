@@ -65,7 +65,7 @@ class AttendanceApiClient {
                     add(
                         TraineeLeaveItem(
                             id = item.optString("id", item.optString("reqId", "")),
-                            date = IstDateTimeFormatter.formatDateOnly(item.optString("date", "-")),
+                            date = EmIstDateTimeFormatter.formatDateOnly(item.optString("date", "-")),
                             type = item.optString("type", "Out-Pass"),
                             status = item.optString("status", "PENDING_SIR"),
                             pdf = item.optString("pdf", item.optString("pdfUrl", "")).trim()
@@ -73,7 +73,7 @@ class AttendanceApiClient {
                     )
                 }
             }
-            val attendanceDate = IstDateTimeFormatter.formatDateOnly(
+            val attendanceDate = EmIstDateTimeFormatter.formatDateOnly(
                 json.optString("attendanceDate", json.optString("date", todayIstDateString())),
                 todayIstDateString()
             )
@@ -108,7 +108,7 @@ class AttendanceApiClient {
                 leaves = leaves,
                 attendanceClosed = json.optAttendanceClosed(),
                 attendanceDate = attendanceDate,
-                closedAt = IstDateTimeFormatter.formatTimeOnly(json.optString("closedAt", ""), ""),
+                closedAt = EmIstDateTimeFormatter.formatTimeOnly(json.optString("closedAt", ""), ""),
                 todayHoliday = todayHoliday,
                 holidays = holidays,
                 notices = notices,
@@ -130,7 +130,7 @@ class AttendanceApiClient {
                 timetable = TimetableStore.parseJsonArray(json.optJSONArray("timetable")),
                 traineeTimetableEditEnabled = json.optBoolean("traineeTimetableEditEnabled", false),
                 publishedReportUrl = json.optString("publishedReportUrl", json.optString("attendancePdfUrl", "")).trim(),
-                publishedReportAt = IstDateTimeFormatter.formatDateTime(json.optString("publishedReportAt", ""), "")
+                publishedReportAt = EmIstDateTimeFormatter.formatDateTime(json.optString("publishedReportAt", ""), "")
             )
         }
     }
@@ -147,7 +147,7 @@ class AttendanceApiClient {
                 .ifBlank { "Trainee #$roll" }
             val resolvedRoll = json.optSafeString("roll", roll.trim())
             val attendance = parseAttendanceSummary(json.optJSONObject("attendance"))
-            val attendanceDate = IstDateTimeFormatter.formatDateOnly(
+            val attendanceDate = EmIstDateTimeFormatter.formatDateOnly(
                 json.optString("attendanceDate", json.optString("date", todayIstDateString())),
                 todayIstDateString()
             )
@@ -159,7 +159,7 @@ class AttendanceApiClient {
                 attendance = attendance,
                 attendanceClosed = json.optAttendanceClosed(),
                 attendanceDate = attendanceDate,
-                closedAt = IstDateTimeFormatter.formatTimeOnly(json.optString("closedAt", ""), ""),
+                closedAt = EmIstDateTimeFormatter.formatTimeOnly(json.optString("closedAt", ""), ""),
                 todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
                     ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) },
                 holidays = holidays,
@@ -171,7 +171,7 @@ class AttendanceApiClient {
                 parentAlerts = parseParentAlerts(json.optJSONArray("parentAlerts")),
                 monthlyMarks = parseMonthlyMarks(json.optJSONArray("monthlyMarks")),
                 publishedReportUrl = json.optString("publishedReportUrl", "").trim(),
-                publishedReportAt = IstDateTimeFormatter.formatDateTime(json.optString("publishedReportAt", ""), "")
+                publishedReportAt = EmIstDateTimeFormatter.formatDateTime(json.optString("publishedReportAt", ""), "")
             )
         }
     }
@@ -210,14 +210,14 @@ class AttendanceApiClient {
                             roll = item.optSafeString("roll"),
                             name = item.optString("name", "Trainee"),
                             todayStatus = item.optString("todayStatus", "ABSENT").ifBlank { "ABSENT" },
-                            inT = IstDateTimeFormatter.formatTimeOnly(item.optString("inT", "-")),
-                            outT = IstDateTimeFormatter.formatTimeOnly(item.optString("outT", "-")),
+                            inT = EmIstDateTimeFormatter.formatTimeOnly(item.optString("inT", "-")),
+                            outT = EmIstDateTimeFormatter.formatTimeOnly(item.optString("outT", "-")),
                             present = present,
                             half = half,
                             total = safeTotal,
                             pct = pct,
                             lateGraceMode = item.optString("lateGraceMode", "").trim().uppercase(),
-                            lateCutoff = IstDateTimeFormatter.formatTimeOnly(item.optString("lateCutoff", ""), ""),
+                            lateCutoff = EmIstDateTimeFormatter.formatTimeOnly(item.optString("lateCutoff", ""), ""),
                             lateGraceNote = item.optString("lateGraceNote", "").trim()
                         )
                     )
@@ -230,7 +230,7 @@ class AttendanceApiClient {
                     add(
                         PendingLeaveRequest(
                             reqId = item.optString("reqId", item.optString("id", "")),
-                            date = IstDateTimeFormatter.formatDateOnly(item.optString("date", "-")),
+                            date = EmIstDateTimeFormatter.formatDateOnly(item.optString("date", "-")),
                             roll = item.optSafeString("roll"),
                             name = item.optString("name", "Trainee"),
                             type = item.optString("type", "Out-Pass"),
@@ -240,7 +240,7 @@ class AttendanceApiClient {
                     )
                 }
             }
-            val attendanceDate = IstDateTimeFormatter.formatDateOnly(
+            val attendanceDate = EmIstDateTimeFormatter.formatDateOnly(
                 json.optString("attendanceDate", json.optString("date", todayIstDateString())),
                 todayIstDateString()
             )
@@ -253,7 +253,7 @@ class AttendanceApiClient {
                 parentAlerts = parseParentAlerts(json.optJSONArray("parentAlerts")),
                 attendanceClosed = json.optAttendanceClosed(),
                 attendanceDate = attendanceDate,
-                closedAt = IstDateTimeFormatter.formatTimeOnly(json.optString("closedAt", ""), ""),
+                closedAt = EmIstDateTimeFormatter.formatTimeOnly(json.optString("closedAt", ""), ""),
                 todayHoliday = parseSingleHoliday(json.optJSONObject("todayHoliday"))
                     ?: holidays.firstOrNull { it.date.equals(attendanceDate, ignoreCase = true) },
                 holidays = holidays,
@@ -264,7 +264,7 @@ class AttendanceApiClient {
                 scanOverrides = parseScanOverrides(json.optJSONObject("scanOverrides")),
                 toolCribLogs = parseToolCribLogs(json.optJSONArray("toolCribLogs")),
                 todayDutySignOff = parseDutySignOff(json.optJSONObject("todayDutySignOff")),
-                lastScannerSyncTime = IstDateTimeFormatter.formatDateTime(json.optString("lastScannerSync", ""), ""),
+                lastScannerSyncTime = EmIstDateTimeFormatter.formatDateTime(json.optString("lastScannerSync", ""), ""),
                 projectGroupsEnabled = json.optBoolean("projectGroupsEnabled", false),
                 projectGroups = parseProjectGroups(json.optJSONArray("projectGroups")),
                 monthlyMarks = parseMonthlyMarks(json.optJSONArray("monthlyMarks")),
@@ -279,7 +279,7 @@ class AttendanceApiClient {
                 timetable = TimetableStore.parseJsonArray(json.optJSONArray("timetable")),
                 traineeTimetableEditEnabled = json.optBoolean("traineeTimetableEditEnabled", false),
                 publishedReportUrl = json.optString("publishedReportUrl", "").trim(),
-                publishedReportAt = IstDateTimeFormatter.formatDateTime(json.optString("publishedReportAt", ""), "")
+                publishedReportAt = EmIstDateTimeFormatter.formatDateTime(json.optString("publishedReportAt", ""), "")
             )
         }
     }
@@ -607,7 +607,7 @@ class AttendanceApiClient {
                 roll = roll.trim(),
                 mode = json.optString("mode", "PRESENT").ifBlank { "PRESENT" },
                 name = json.optString("name", "Roll #$roll").ifBlank { "Roll #$roll" },
-                time = IstDateTimeFormatter.formatTimeOnly(json.optString("time", "-")),
+                time = EmIstDateTimeFormatter.formatTimeOnly(json.optString("time", "-")),
                 message = json.optString("msg", json.optString("message", "")).trim()
             )
         }
@@ -716,8 +716,8 @@ class AttendanceApiClient {
         val safeTotal = AttendanceMath.safeTotalDays(present, half, obj.optSafeInt("total"))
         return AttendanceSummary(
             todayStatus = obj.optString("todayStatus", "ABSENT").ifBlank { "ABSENT" },
-            inT = IstDateTimeFormatter.formatTimeOnly(obj.optString("inT", "-")),
-            outT = IstDateTimeFormatter.formatTimeOnly(obj.optString("outT", "-")),
+            inT = EmIstDateTimeFormatter.formatTimeOnly(obj.optString("inT", "-")),
+            outT = EmIstDateTimeFormatter.formatTimeOnly(obj.optString("outT", "-")),
             present = present,
             half = half,
             total = safeTotal,
@@ -743,16 +743,16 @@ class AttendanceApiClient {
         if (roll.isBlank()) return null
         return ShopFloorEntry(
             id = obj.optSafeString("id", "SF-$roll"),
-            date = IstDateTimeFormatter.formatDateOnly(obj.optString("date", todayIstDateString()), todayIstDateString()),
+            date = EmIstDateTimeFormatter.formatDateOnly(obj.optString("date", todayIstDateString()), todayIstDateString()),
             roll = roll,
             name = obj.optString("name", "Roll #$roll").ifBlank { "Roll #$roll" },
             attendancePct = obj.optSafeInt("attendancePct", obj.optSafeInt("pct")).coerceIn(0, 100),
             sessionType = obj.optString("sessionType", "POST_3PM").ifBlank { "POST_3PM" },
-            scheduledEndTime = IstDateTimeFormatter.formatTimeOnly(obj.optString("scheduledEndTime", "05:00 PM"), "05:00 PM"),
+            scheduledEndTime = EmIstDateTimeFormatter.formatTimeOnly(obj.optString("scheduledEndTime", "05:00 PM"), "05:00 PM"),
             assignedReason = obj.optString("assignedReason", "Auto (<80%)"),
             status = obj.optString("status", "SCHEDULED").ifBlank { "SCHEDULED" },
-            checkInTime = IstDateTimeFormatter.formatTimeOnly(obj.optString("checkInTime", "03:00 PM"), "03:00 PM"),
-            checkOutCardScanTime = IstDateTimeFormatter.formatTimeOnly(obj.optString("checkOutCardScanTime", ""), ""),
+            checkInTime = EmIstDateTimeFormatter.formatTimeOnly(obj.optString("checkInTime", "03:00 PM"), "03:00 PM"),
+            checkOutCardScanTime = EmIstDateTimeFormatter.formatTimeOnly(obj.optString("checkOutCardScanTime", ""), ""),
             durationMinutes = obj.optSafeInt("durationMinutes"),
             verifiedByInstructor = obj.optBoolean("verifiedByInstructor", false),
             isManualOverride = obj.optBoolean("isManualOverride", false)
@@ -769,7 +769,7 @@ class AttendanceApiClient {
         return ScanOverrideState(
             earlyClassLogoutEnabled = obj.optBoolean("earlyClassLogoutEnabled", obj.optBoolean("earlyClassLogout", false)),
             shopFloorReleaseNowEnabled = obj.optBoolean("shopFloorReleaseNowEnabled", obj.optBoolean("shopFloorReleaseNow", false)),
-            updatedAt = IstDateTimeFormatter.formatDateTime(obj.optString("updatedAt", ""), ""),
+            updatedAt = EmIstDateTimeFormatter.formatDateTime(obj.optString("updatedAt", ""), ""),
             updatedBy = obj.optString("updatedBy", "").trim()
         )
     }
@@ -781,17 +781,17 @@ class AttendanceApiClient {
                 val item = array.optJSONObject(i) ?: continue
                 val name = item.optString("itemName", "").trim()
                 if (name.isBlank()) continue
-                add(ToolCribLogEntry(id = item.optSafeString("id", "TC-$i"), date = IstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()), time = IstDateTimeFormatter.formatTimeOnly(item.optString("time", ""), ""), itemName = name, conditionStatus = item.optString("conditionStatus", "DAMAGED"), notes = item.optString("notes", "").trim(), reportedBy = item.optString("reportedBy", "Trade Instructor")))
+                add(ToolCribLogEntry(id = item.optSafeString("id", "TC-$i"), date = EmIstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()), time = EmIstDateTimeFormatter.formatTimeOnly(item.optString("time", ""), ""), itemName = name, conditionStatus = item.optString("conditionStatus", "DAMAGED"), notes = item.optString("notes", "").trim(), reportedBy = item.optString("reportedBy", "Trade Instructor")))
             }
         }
     }
 
     private fun parseDutySignOff(obj: JSONObject?): DutySignOffRecord? {
         if (obj == null) return null
-        val date = IstDateTimeFormatter.formatDateOnly(obj.optString("date", ""), "")
+        val date = EmIstDateTimeFormatter.formatDateOnly(obj.optString("date", ""), "")
         val pair = obj.optString("pairLabel", "").trim()
         if (date.isBlank() && pair.isBlank()) return null
-        return DutySignOffRecord(date = date.ifBlank { todayIstDateString() }, pairLabel = pair, signedOff = obj.optBoolean("signedOff", false), signedAt = IstDateTimeFormatter.formatTimeOnly(obj.optString("signedAt", ""), ""), note = obj.optString("note", "").trim())
+        return DutySignOffRecord(date = date.ifBlank { todayIstDateString() }, pairLabel = pair, signedOff = obj.optBoolean("signedOff", false), signedAt = EmIstDateTimeFormatter.formatTimeOnly(obj.optString("signedAt", ""), ""), note = obj.optString("note", "").trim())
     }
 
     private fun parseParentAlerts(array: JSONArray?): List<ParentAlertItem> {
@@ -799,14 +799,14 @@ class AttendanceApiClient {
         return buildList {
             for (i in 0 until array.length()) {
                 val item = array.optJSONObject(i) ?: continue
-                add(ParentAlertItem(id = item.optSafeString("id", "PA-$i"), date = IstDateTimeFormatter.formatDateOnly(item.optString("date", "-")), time = IstDateTimeFormatter.formatTimeOnly(item.optString("time", ""), ""), roll = item.optSafeString("roll"), studentName = item.optString("studentName", "Trainee"), alertType = item.optString("alertType", ParentAlertTypes.LEAVE_REASON), message = item.optString("message", "").trim()))
+                add(ParentAlertItem(id = item.optSafeString("id", "PA-$i"), date = EmIstDateTimeFormatter.formatDateOnly(item.optString("date", "-")), time = EmIstDateTimeFormatter.formatTimeOnly(item.optString("time", ""), ""), roll = item.optSafeString("roll"), studentName = item.optString("studentName", "Trainee"), alertType = item.optString("alertType", ParentAlertTypes.LEAVE_REASON), message = item.optString("message", "").trim()))
             }
         }
     }
 
     private fun parseSingleHoliday(obj: JSONObject?): HolidayAnnouncement? {
         if (obj == null) return null
-        val date = IstDateTimeFormatter.formatDateOnly(obj.optString("date", ""), "")
+        val date = EmIstDateTimeFormatter.formatDateOnly(obj.optString("date", ""), "")
         val reason = obj.optString("reason", "").trim()
         if (date.isBlank() && reason.isBlank()) return null
         return HolidayAnnouncement(id = obj.optSafeString("id", "HOL-$date"), date = date.ifBlank { todayIstDateString() }, reason = reason.ifBlank { "Declared Holiday" }, postedBy = obj.optString("postedBy", "Trade Instructor"), postedAt = obj.optString("postedAt", ""))
@@ -827,7 +827,7 @@ class AttendanceApiClient {
         return NoticeItem(
             id = item.optSafeString("id", item.optSafeString("noticeId", "NTC-${item.hashCode()}")),
             title = item.optString("title", "Trade Notice").ifBlank { "Trade Notice" },
-            date = IstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()),
+            date = EmIstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()),
             category = item.optString("category", "General").ifBlank { "General" },
             body = item.optString("body", item.optString("message", "")).trim(),
             postedBy = item.optString("postedBy", "Govt. ITI Ranni").ifBlank { "Govt. ITI Ranni" },
@@ -872,7 +872,7 @@ class AttendanceApiClient {
                     MonthlyExamMark(
                         id = item.optSafeString("id", "MK-$roll-$i"),
                         monthLabel = monthLabel.ifBlank { "Monthly Exam" },
-                        examDate = IstDateTimeFormatter.formatDateOnly(item.optString("examDate", ""), ""),
+                        examDate = EmIstDateTimeFormatter.formatDateOnly(item.optString("examDate", ""), ""),
                         roll = roll,
                         studentName = item.optString("studentName", "Trainee #$roll").ifBlank { "Trainee #$roll" },
                         theoryMarks = item.optSafeInt("theoryMarks", item.optSafeInt("theory", 0)).coerceAtLeast(0),
@@ -900,7 +900,7 @@ class AttendanceApiClient {
                 val ref = item.optString("workReference", "").trim()
                 val note = item.optString("traineeNote", "").trim()
                 if (ref.isBlank() && note.isBlank()) continue
-                add(WorkMarkQuery(id = item.optSafeString("id", "WMQ-$i"), date = IstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()), time = item.optString("time", ""), roll = item.optSafeString("roll"), studentName = item.optString("studentName", "Trainee"), monthLabel = item.optString("monthLabel", ""), workReference = ref.ifBlank { "Lab Practical" }, currentMarkNote = item.optString("currentMarkNote", ""), traineeNote = note, status = item.optString("status", "OPEN").uppercase(), instructorReply = item.optString("instructorReply", ""), updatedAt = item.optString("updatedAt", "")))
+                add(WorkMarkQuery(id = item.optSafeString("id", "WMQ-$i"), date = EmIstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()), time = item.optString("time", ""), roll = item.optSafeString("roll"), studentName = item.optString("studentName", "Trainee"), monthLabel = item.optString("monthLabel", ""), workReference = ref.ifBlank { "Lab Practical" }, currentMarkNote = item.optString("currentMarkNote", ""), traineeNote = note, status = item.optString("status", "OPEN").uppercase(), instructorReply = item.optString("instructorReply", ""), updatedAt = item.optString("updatedAt", "")))
             }
         }
     }
@@ -912,7 +912,7 @@ class AttendanceApiClient {
                 val item = array.optJSONObject(i) ?: continue
                 val roll = item.optSafeString("roll")
                 if (roll.isBlank()) continue
-                add(RunningLateAlert(id = item.optSafeString("id", "RL-$roll-$i"), date = IstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()), time = item.optString("time", ""), roll = roll, studentName = item.optString("studentName", "Trainee #$roll"), expectedArrival = item.optString("expectedArrival", "Soon"), reasonCategory = item.optString("reasonCategory", "Delay"), details = item.optString("details", ""), status = item.optString("status", "ACTIVE").uppercase()))
+                add(RunningLateAlert(id = item.optSafeString("id", "RL-$roll-$i"), date = EmIstDateTimeFormatter.formatDateOnly(item.optString("date", todayIstDateString()), todayIstDateString()), time = item.optString("time", ""), roll = roll, studentName = item.optString("studentName", "Trainee #$roll"), expectedArrival = item.optString("expectedArrival", "Soon"), reasonCategory = item.optString("reasonCategory", "Delay"), details = item.optString("details", ""), status = item.optString("status", "ACTIVE").uppercase()))
             }
         }
     }
@@ -975,7 +975,7 @@ class AttendanceApiClient {
     }
 
     private fun parseSingleDutyOverride(obj: JSONObject, fallbackDateKey: String): DutyOverrideEntry? {
-        val dateKey = IstDateTimeFormatter.formatDateOnly(obj.optString("dateKey", fallbackDateKey), fallbackDateKey).trim()
+        val dateKey = EmIstDateTimeFormatter.formatDateOnly(obj.optString("dateKey", fallbackDateKey), fallbackDateKey).trim()
         if (dateKey.isBlank()) return null
         val r1 = obj.optSafeInt("firstRoll")
         val r2 = obj.optSafeInt("secondRoll")
