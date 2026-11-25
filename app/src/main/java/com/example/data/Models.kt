@@ -260,10 +260,14 @@ data class TechNewsItem(
 )
 
 data class TimetablePeriod(
-    val day: String,
-    val slot: String,
-    val subject: String,
-    val roomOrLab: String = "EM Lab"
+    val id: String = "",
+    val dayOfWeek: String = "MON",
+    val startTime: String = "",
+    val endTime: String = "",
+    val subject: String = "",
+    val sessionType: String = "Theory",
+    val roomOrNote: String = "",
+    val updatedBy: String = ""
 )
 
 object LateGraceModes {
