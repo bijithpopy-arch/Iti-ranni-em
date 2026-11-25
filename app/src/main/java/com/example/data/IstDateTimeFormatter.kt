@@ -304,3 +304,4 @@ object IstDateTimeFormatter {
         return sdf.format(date)
     }
 }
+typealias EmIstDateTimeFormatter = IstDateTimeFormatter
